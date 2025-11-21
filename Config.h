@@ -84,6 +84,18 @@
 // For the SP8NTH board
 // #define ARDUINO_DUE_NTH
 
+// ============================================================
+// ESP32 Family Board Selection
+// ============================================================
+// For generic ESP32 board (ESP32-WROOM-32, ESP32-WROVER, DevKitC, etc.)
+// #define ESP32_GENERIC
+
+// For generic ESP32-S2 board
+// #define ESP32S2_GENERIC
+
+// For generic ESP32-S3 board (Note: Requires external DAC!)
+// #define ESP32S3_GENERIC
+
 // For ST Nucleo-64 STM32F446RE board
 // #define STM32F4_NUCLEO_MORPHO_HEADER
 // #define STM32F4_NUCLEO_ARDUINO_HEADER

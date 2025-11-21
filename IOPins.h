@@ -71,6 +71,26 @@
 #elif defined(STM32F4_EDA_405) || defined(STM32F4_EDA_446)
     #include "pins/pins_f4_stm32eda.h"
 
+// ESP32 family boards
+#elif defined(ESP32_GENERIC)
+    #include "pins/pins_esp32.h"
+
+#elif defined(ESP32S2_GENERIC)
+    #include "pins/pins_esp32s2.h"
+
+#elif defined(ESP32S3_GENERIC)
+    #include "pins/pins_esp32s3.h"
+
+#elif defined(ESP32) || defined(ESP32S2) || defined(ESP32S3)
+    // Default ESP32 pins if no specific board defined
+    #if defined(ESP32S3)
+        #include "pins/pins_esp32s3.h"
+    #elif defined(ESP32S2)
+        #include "pins/pins_esp32s2.h"
+    #else
+        #include "pins/pins_esp32.h"
+    #endif
+
 #else
     #error "A valid board type macro need to be defined."
 
