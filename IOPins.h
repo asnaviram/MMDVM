@@ -85,13 +85,16 @@
 #elif defined(ESP32C3_GENERIC)
     #include "pins/pins_esp32c3.h"
 
+#elif defined(ESP32C5_GENERIC)
+    #include "pins/pins_esp32c5.h"
+
 #elif defined(ESP32C6_GENERIC)
     #include "pins/pins_esp32c6.h"
 
 #elif defined(ESP32H2_GENERIC)
     #include "pins/pins_esp32h2.h"
 
-#elif defined(ESP32) || defined(ESP32S2) || defined(ESP32S3) || defined(ESP32C3) || defined(ESP32C6) || defined(ESP32H2)
+#elif defined(ESP32) || defined(ESP32S2) || defined(ESP32S3) || defined(ESP32C3) || defined(ESP32C5) || defined(ESP32C6) || defined(ESP32H2)
     // Default ESP32 pins if no specific board defined
     #if defined(ESP32S3)
         #include "pins/pins_esp32s3.h"
@@ -99,6 +102,8 @@
         #include "pins/pins_esp32s2.h"
     #elif defined(ESP32C3)
         #include "pins/pins_esp32c3.h"
+    #elif defined(ESP32C5)
+        #include "pins/pins_esp32c5.h"
     #elif defined(ESP32C6)
         #include "pins/pins_esp32c6.h"
     #elif defined(ESP32H2)

@@ -24,7 +24,7 @@
 #include "stm32f4xx.h"
 #elif defined(STM32F7XX)
 #include "stm32f7xx.h"
-#elif defined(ESP32) || defined(ESP32S2) || defined(ESP32S3) || defined(ESP32C3) || defined(ESP32C6) || defined(ESP32H2)
+#elif defined(ESP32) || defined(ESP32S2) || defined(ESP32S3) || defined(ESP32C3) || defined(ESP32C5) || defined(ESP32C6) || defined(ESP32H2)
 #include <Arduino.h>
 #else
 #include <Arduino.h>
@@ -40,7 +40,7 @@
 #elif defined(ESP32) || defined(ESP32S2) || defined(ESP32S3)
 #define  ARM_MATH_CM4
 #define  ESP32_ARM_MATH_COMPAT
-#elif defined(ESP32C3) || defined(ESP32C6) || defined(ESP32H2)
+#elif defined(ESP32C3) || defined(ESP32C5) || defined(ESP32C6) || defined(ESP32H2)
 #define  ARM_MATH_CM4
 #define  ESP32_ARM_MATH_COMPAT
 #else
