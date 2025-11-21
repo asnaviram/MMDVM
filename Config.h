@@ -96,17 +96,29 @@
 // For generic ESP32-S3 board (Note: Requires external DAC!)
 // #define ESP32S3_GENERIC
 
+// ESP32 RISC-V Variants (single-core, NO built-in DAC)
+// For ESP32-C3 (RISC-V, WiFi + BLE)
+// #define ESP32C3_GENERIC
+
+// For ESP32-C6 (RISC-V, WiFi 6 + BLE 5.3 + Zigbee/Thread)
+// #define ESP32C6_GENERIC
+
+// For ESP32-H2 (RISC-V, BLE 5.2 + Zigbee/Thread, NO WiFi!)
+// #define ESP32H2_GENERIC
+
 // ============================================================
 // ESP32 DAC Output Options (choose one)
 // ============================================================
 // Use high-quality PWM-based DAC (requires external RC filter: 10k + 100nF)
-// This works on ALL ESP32 variants including ESP32-S3
+// This works on ALL ESP32 variants including S3 and RISC-V (C3/C6/H2)
 // Provides 12-bit resolution vs 8-bit for built-in DAC
+// REQUIRED for ESP32-S3, C3, C6, H2 (they have no built-in DAC)
 // #define USE_PWM_DAC
 
 // Use I2S external DAC (e.g., PCM5102, MAX98357)
 // This is the DEFAULT for ESP32-S3 when USE_PWM_DAC is not defined
 // Provides best quality (up to 16-bit) but requires external DAC chip
+// Works on all ESP32 variants
 // #define USE_I2S_DAC
 
 // ============================================================

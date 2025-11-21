@@ -81,12 +81,28 @@
 #elif defined(ESP32S3_GENERIC)
     #include "pins/pins_esp32s3.h"
 
-#elif defined(ESP32) || defined(ESP32S2) || defined(ESP32S3)
+// ESP32 RISC-V family boards
+#elif defined(ESP32C3_GENERIC)
+    #include "pins/pins_esp32c3.h"
+
+#elif defined(ESP32C6_GENERIC)
+    #include "pins/pins_esp32c6.h"
+
+#elif defined(ESP32H2_GENERIC)
+    #include "pins/pins_esp32h2.h"
+
+#elif defined(ESP32) || defined(ESP32S2) || defined(ESP32S3) || defined(ESP32C3) || defined(ESP32C6) || defined(ESP32H2)
     // Default ESP32 pins if no specific board defined
     #if defined(ESP32S3)
         #include "pins/pins_esp32s3.h"
     #elif defined(ESP32S2)
         #include "pins/pins_esp32s2.h"
+    #elif defined(ESP32C3)
+        #include "pins/pins_esp32c3.h"
+    #elif defined(ESP32C6)
+        #include "pins/pins_esp32c6.h"
+    #elif defined(ESP32H2)
+        #include "pins/pins_esp32h2.h"
     #else
         #include "pins/pins_esp32.h"
     #endif

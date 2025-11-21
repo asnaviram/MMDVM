@@ -22,7 +22,7 @@
 #include "Globals.h"
 #include "IO.h"
 
-#if defined(ESP32) || defined(ESP32S2) || defined(ESP32S3)
+#if defined(ESP32) || defined(ESP32S2) || defined(ESP32S3) || defined(ESP32C3) || defined(ESP32C6) || defined(ESP32H2)
 
 #include "IOPins.h"
 #include <driver/adc.h>
@@ -68,12 +68,12 @@
 // For 24kHz sampling, we use high-frequency PWM carrier
 #define PWM_CHANNEL      LEDC_CHANNEL_0
 #define PWM_TIMER        LEDC_TIMER_0
-#define PWM_SPEED_MODE   LEDC_HIGH_SPEED_MODE  // High-speed mode for better timing
 
-#if defined(ESP32S3) || defined(ESP32S2)
-// S2/S3 don't have high-speed mode, use low-speed
-#undef PWM_SPEED_MODE
-#define PWM_SPEED_MODE   LEDC_LOW_SPEED_MODE
+// Use LOW_SPEED_MODE for S2/S3/RISC-V, HIGH_SPEED_MODE for original ESP32
+#if defined(ESP32S2) || defined(ESP32S3) || defined(ESP32C3) || defined(ESP32C6) || defined(ESP32H2)
+#define PWM_SPEED_MODE   LEDC_LOW_SPEED_MODE   // S2/S3/C3/C6/H2 only have LOW_SPEED
+#else
+#define PWM_SPEED_MODE   LEDC_HIGH_SPEED_MODE  // Original ESP32 has HIGH_SPEED
 #endif
 
 // PWM resolution and frequency
@@ -85,12 +85,13 @@
 
 #endif // USE_PWM_DAC
 
-// ESP32 built-in DAC (not for S3)
-#if !defined(ESP32S3) && !defined(USE_PWM_DAC)
+// ESP32 built-in DAC (only for original ESP32, not for S3 or RISC-V variants)
+#if !defined(ESP32S3) && !defined(ESP32C3) && !defined(ESP32C6) && !defined(ESP32H2) && !defined(USE_PWM_DAC) && !defined(USE_I2S_DAC)
 #include <driver/dac.h>
 #endif
 
 // I2S for external DAC (ESP32-S3 default, or when USE_I2S_DAC defined)
+// RISC-V variants can use PWM or I2S - user must choose via Config.h
 #if defined(ESP32S3) && !defined(USE_PWM_DAC)
 #define USE_I2S_DAC
 #endif
@@ -434,6 +435,12 @@ uint8_t CIO::getCPU() const
     return 5U;  // ESP32-S3
 #elif defined(ESP32S2)
     return 4U;  // ESP32-S2
+#elif defined(ESP32C3)
+    return 6U;  // ESP32-C3 (RISC-V)
+#elif defined(ESP32C6)
+    return 7U;  // ESP32-C6 (RISC-V)
+#elif defined(ESP32H2)
+    return 8U;  // ESP32-H2 (RISC-V)
 #else
     return 3U;  // ESP32 (original)
 #endif
@@ -460,4 +467,4 @@ void CIO::getUDID(uint8_t* buffer)
     buffer[11] = 0x32;  // '32'
 }
 
-#endif // ESP32 || ESP32S2 || ESP32S3
+#endif // ESP32 || ESP32S2 || ESP32S3 || ESP32C3 || ESP32C6 || ESP32H2
