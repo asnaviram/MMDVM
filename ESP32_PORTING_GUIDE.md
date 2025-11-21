@@ -19,9 +19,9 @@ This guide documents the process of porting MMDVM firmware to ESP32 family micro
 | Variant | CPU | RAM | ADC | DAC | WiFi | Status |
 |---------|-----|-----|-----|-----|------|--------|
 | ESP32-C3 | Single-core RV32 160MHz | 400KB | 12-bit SAR | None* | WiFi 4 + BLE | ✅ Fully supported |
-| ESP32-C5 | Single-core RV32 240MHz | 400KB | 12-bit SAR | None* | WiFi 6 + BLE | 🔧 Hardware ready, awaiting Arduino-ESP32 3.0+ |
-| ESP32-C6 | Single-core RV32 160MHz | 512KB | 12-bit SAR | None* | WiFi 6 + BLE | 🔧 Hardware ready, awaiting Arduino-ESP32 3.0+ |
-| ESP32-H2 | Single-core RV32 96MHz | 320KB | 12-bit SAR | None* | None (BLE only) | 🔧 Hardware ready, awaiting Arduino-ESP32 3.0+ |
+| ESP32-C5 | Single-core RV32 240MHz | 400KB | 12-bit SAR | None* | WiFi 6 + BLE | 🔧 Code ready, blocked by PlatformIO MCU support |
+| ESP32-C6 | Single-core RV32 160MHz | 512KB | 12-bit SAR | None* | WiFi 6 + BLE | 🔧 Code ready, blocked by PlatformIO Arduino framework |
+| ESP32-H2 | Single-core RV32 96MHz | 320KB | 12-bit SAR | None* | None (BLE only) | 🔧 Code ready, blocked by PlatformIO board definitions |
 
 *Requires external DAC (PWM with RC filter or I2S DAC chip)
 
@@ -444,27 +444,33 @@ Available PlatformIO environments:
 
 ### RISC-V Variants
 
-| Environment | Description |
-|-------------|-------------|
-| `esp32c3` | ESP32-C3 with PWM DAC (12-bit) |
-| `esp32c3-wifi-pwm` | ESP32-C3 with WiFi + PWM DAC |
-| `esp32c5` | ESP32-C5 with PWM DAC (WiFi 6, 240MHz) - Requires Arduino-ESP32 3.0+ |
-| `esp32c5-wifi-pwm` | ESP32-C5 with WiFi 6 + PWM DAC - Requires Arduino-ESP32 3.0+ |
-| `esp32c6` | ESP32-C6 with PWM DAC (WiFi 6) - Requires Arduino-ESP32 3.0+ |
-| `esp32c6-wifi-pwm` | ESP32-C6 with WiFi 6 + PWM DAC - Requires Arduino-ESP32 3.0+ |
-| `esp32h2` | ESP32-H2 with PWM DAC (No WiFi) - Requires Arduino-ESP32 3.0+ |
+| Environment | Description | Status |
+|-------------|-------------|--------|
+| `esp32c3` | ESP32-C3 with PWM DAC (12-bit) | ✅ Working |
+| `esp32c3-wifi-pwm` | ESP32-C3 with WiFi + PWM DAC | ✅ Working |
+| `esp32c5` | ESP32-C5 with PWM DAC (WiFi 6, 240MHz) | ⚠️ Commented out - PlatformIO limitation |
+| `esp32c5-wifi-pwm` | ESP32-C5 with WiFi 6 + PWM DAC | ⚠️ Commented out - PlatformIO limitation |
+| `esp32c6` | ESP32-C6 with PWM DAC (WiFi 6) | ⚠️ Commented out - PlatformIO limitation |
+| `esp32c6-wifi-pwm` | ESP32-C6 with WiFi 6 + PWM DAC | ⚠️ Commented out - PlatformIO limitation |
+| `esp32h2` | ESP32-H2 with PWM DAC (No WiFi) | ⚠️ Commented out - PlatformIO limitation |
 
 Build command:
 ```bash
 pio run -e esp32c3-wifi-pwm
 ```
 
-**Note**: ESP32-C5, C6 and H2 support is ready but requires Arduino-ESP32 version 3.0 or later. The environments are currently commented out in platformio.ini until framework support is available.
+**PlatformIO Limitations**: ESP32-C5, C6, and H2 environments are commented out due to PlatformIO limitations:
+- **C5**: MCU type `esp32c5` not recognized by PlatformIO platform (tries to use Xtensa toolchain instead of RISC-V)
+- **C6**: Board definitions only include ESP-IDF framework, Arduino framework not enabled in board.json
+- **H2**: No board definition exists in PlatformIO boards database
+
+The code is complete and ready for these variants. Once PlatformIO's board definitions are updated to support Arduino framework on these chips, the environments can be uncommented. Arduino-ESP32 3.x already supports these chips at the framework level.
 
 ---
 
 ## Version History
 
+- v1.2 (2025-11-21): Added RISC-V variant support (ESP32-C3 working, C5/C6/H2 code ready but blocked by PlatformIO)
 - v1.1 (2025-11-21): Added WiFi UDP and PWM DAC support
 - v1.0 (2025-11-21): Initial ESP32 port supporting ESP32, ESP32-S2, ESP32-S3
 
