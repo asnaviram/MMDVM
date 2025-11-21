@@ -17,11 +17,13 @@
 
 #include <stdint.h>
 #include <string.h>
+#include <math.h>
 
 // ARM CMSIS-DSP compatible types
 typedef int16_t q15_t;
 typedef int32_t q31_t;
 typedef int64_t q63_t;
+typedef float   float32_t;
 
 // Saturation macro (equivalent to ARM's __SSAT)
 #ifndef __SSAT
@@ -36,6 +38,21 @@ typedef struct {
     q15_t*   pState;      // Points to the state variable array
     q15_t*   pCoeffs;     // Points to the coefficient array
 } arm_fir_instance_q15;
+
+// FIR interpolate instance structure (Q15)
+typedef struct {
+    uint8_t  L;           // Interpolation factor
+    uint16_t phaseLength; // Length of each polyphase filter component
+    q15_t*   pCoeffs;     // Points to coefficient array
+    q15_t*   pState;      // Points to state variable array
+} arm_fir_interpolate_instance_q15;
+
+// FIR filter instance structure (float32)
+typedef struct {
+    uint16_t   numTaps;   // Number of filter coefficients
+    float32_t* pState;    // Points to the state variable array
+    float32_t* pCoeffs;   // Points to the coefficient array
+} arm_fir_instance_f32;
 
 // Biquad cascade filter instance structure (DF1, 32-bit)
 typedef struct {
@@ -315,6 +332,205 @@ static inline void arm_fill_q15(
     for (uint32_t i = 0; i < blockSize; i++) {
         pDst[i] = value;
     }
+}
+
+/**
+ * @brief Initialize FIR Q15 filter
+ */
+static inline void arm_fir_init_q15(
+    arm_fir_instance_q15* S,
+    uint16_t numTaps,
+    q15_t* pCoeffs,
+    q15_t* pState,
+    uint32_t blockSize)
+{
+    (void)blockSize;
+    S->numTaps = numTaps;
+    S->pCoeffs = pCoeffs;
+    S->pState = pState;
+    memset(pState, 0, (numTaps + blockSize - 1) * sizeof(q15_t));
+}
+
+/**
+ * @brief Initialize FIR interpolate Q15 filter
+ */
+static inline void arm_fir_interpolate_init_q15(
+    arm_fir_interpolate_instance_q15* S,
+    uint8_t L,
+    uint16_t numTaps,
+    q15_t* pCoeffs,
+    q15_t* pState,
+    uint32_t blockSize)
+{
+    (void)blockSize;
+    S->L = L;
+    S->phaseLength = numTaps / L;
+    S->pCoeffs = pCoeffs;
+    S->pState = pState;
+    memset(pState, 0, (S->phaseLength + blockSize - 1) * sizeof(q15_t));
+}
+
+/**
+ * @brief Q15 FIR interpolation filter
+ * @param[in]  S          points to an instance of the Q15 FIR interpolator structure
+ * @param[in]  pSrc       points to the block of input data
+ * @param[out] pDst       points to the block of output data
+ * @param[in]  blockSize  number of input samples to process
+ */
+static inline void arm_fir_interpolate_q15(
+    const arm_fir_interpolate_instance_q15* S,
+    const q15_t* pSrc,
+    q15_t* pDst,
+    uint32_t blockSize)
+{
+    q15_t* pState = S->pState;
+    const q15_t* pCoeffs = S->pCoeffs;
+    uint8_t L = S->L;
+    uint16_t phaseLen = S->phaseLength;
+
+    for (uint32_t i = 0; i < blockSize; i++) {
+        // Shift state and add new input
+        for (uint16_t j = 0; j < phaseLen - 1; j++) {
+            pState[j] = pState[j + 1];
+        }
+        pState[phaseLen - 1] = pSrc[i];
+
+        // Generate L output samples for each input
+        for (uint8_t phase = 0; phase < L; phase++) {
+            q31_t acc = 0;
+            const q15_t* pC = pCoeffs + phase;
+
+            // Apply polyphase filter
+            for (uint16_t k = 0; k < phaseLen; k++) {
+                acc += (q31_t)pState[phaseLen - 1 - k] * (q31_t)pC[k * L];
+            }
+
+            pDst[i * L + phase] = (q15_t)__SSAT(acc >> 15, 16);
+        }
+    }
+}
+
+/**
+ * @brief Initialize FIR float32 filter
+ */
+static inline void arm_fir_init_f32(
+    arm_fir_instance_f32* S,
+    uint16_t numTaps,
+    float32_t* pCoeffs,
+    float32_t* pState,
+    uint32_t blockSize)
+{
+    (void)blockSize;
+    S->numTaps = numTaps;
+    S->pCoeffs = pCoeffs;
+    S->pState = pState;
+    memset(pState, 0, (numTaps + blockSize - 1) * sizeof(float32_t));
+}
+
+/**
+ * @brief Float32 FIR filter
+ * @param[in]  S          points to an instance of the float32 FIR filter structure
+ * @param[in]  pSrc       points to the block of input data
+ * @param[out] pDst       points to the block of output data
+ * @param[in]  blockSize  number of samples to process
+ */
+static inline void arm_fir_f32(
+    const arm_fir_instance_f32* S,
+    const float32_t* pSrc,
+    float32_t* pDst,
+    uint32_t blockSize)
+{
+    float32_t* pState = S->pState;
+    const float32_t* pCoeffs = S->pCoeffs;
+    uint16_t numTaps = S->numTaps;
+
+    for (uint32_t sample = 0; sample < blockSize; sample++) {
+        // Copy new input into state buffer
+        pState[numTaps - 1] = pSrc[sample];
+
+        // Apply FIR filter
+        float32_t acc = 0.0f;
+        for (uint16_t i = 0; i < numTaps; i++) {
+            acc += pState[numTaps - 1 - i] * pCoeffs[i];
+        }
+        pDst[sample] = acc;
+
+        // Shift state buffer
+        for (uint16_t i = 0; i < numTaps - 1; i++) {
+            pState[i] = pState[i + 1];
+        }
+    }
+}
+
+/**
+ * @brief Initialize Biquad cascade Q31 filter
+ */
+static inline void arm_biquad_cascade_df1_init_q31(
+    arm_biquad_casd_df1_inst_q31* S,
+    uint8_t numStages,
+    q31_t* pCoeffs,
+    q31_t* pState,
+    int8_t postShift)
+{
+    S->numStages = numStages;
+    S->pCoeffs = pCoeffs;
+    S->pState = pState;
+    S->postShift = postShift;
+    memset(pState, 0, 4 * numStages * sizeof(q31_t));
+}
+
+/**
+ * @brief Q31 sine function
+ * @param[in]  x  Scaled input value in radians
+ * @return sin(x) in Q31 format
+ *
+ * Input is in Q31 format where full scale represents the range -pi to +pi
+ * This means 0x7FFFFFFF = pi and 0x80000000 = -pi
+ */
+static inline q31_t arm_sin_q31(q31_t x)
+{
+    // Convert Q31 to radians: Q31 full scale is +/- pi
+    // So x / 2^31 * pi gives radians
+    double radians = ((double)x / 2147483648.0) * M_PI;
+    double result = sin(radians);
+    // Convert back to Q31 (result is -1 to +1, scale to Q31)
+    return (q31_t)(result * 2147483647.0);
+}
+
+/**
+ * @brief Q31 cosine function
+ * @param[in]  x  Scaled input value in radians
+ * @return cos(x) in Q31 format
+ */
+static inline q31_t arm_cos_q31(q31_t x)
+{
+    double radians = ((double)x / 2147483648.0) * M_PI;
+    double result = cos(radians);
+    return (q31_t)(result * 2147483647.0);
+}
+
+/**
+ * @brief Q15 sine function
+ * @param[in]  x  Scaled input value in radians
+ * @return sin(x) in Q15 format
+ */
+static inline q15_t arm_sin_q15(q15_t x)
+{
+    double radians = ((double)x / 32768.0) * M_PI;
+    double result = sin(radians);
+    return (q15_t)(result * 32767.0);
+}
+
+/**
+ * @brief Q15 cosine function
+ * @param[in]  x  Scaled input value in radians
+ * @return cos(x) in Q15 format
+ */
+static inline q15_t arm_cos_q15(q15_t x)
+{
+    double radians = ((double)x / 32768.0) * M_PI;
+    double result = cos(radians);
+    return (q15_t)(result * 32767.0);
 }
 
 #endif // _ARM_MATH_ESP32_H

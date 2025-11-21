@@ -285,8 +285,7 @@ void IRAM_ATTR CIO::interrupt()
     // Output to DAC based on selected method
 #if defined(USE_PWM_DAC)
     // PWM DAC: Direct 12-bit value to LEDC duty cycle
-    // Using direct register write for speed in ISR
-    ledc_set_duty_fast(PWM_SPEED_MODE, PWM_CHANNEL, sample.sample);
+    ledc_set_duty(PWM_SPEED_MODE, PWM_CHANNEL, sample.sample);
     ledc_update_duty(PWM_SPEED_MODE, PWM_CHANNEL);
 
 #elif defined(USE_I2S_DAC)
