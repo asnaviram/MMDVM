@@ -96,6 +96,38 @@
 // For generic ESP32-S3 board (Note: Requires external DAC!)
 // #define ESP32S3_GENERIC
 
+// ============================================================
+// ESP32 DAC Output Options (choose one)
+// ============================================================
+// Use high-quality PWM-based DAC (requires external RC filter: 10k + 100nF)
+// This works on ALL ESP32 variants including ESP32-S3
+// Provides 12-bit resolution vs 8-bit for built-in DAC
+// #define USE_PWM_DAC
+
+// Use I2S external DAC (e.g., PCM5102, MAX98357)
+// This is the DEFAULT for ESP32-S3 when USE_PWM_DAC is not defined
+// Provides best quality (up to 16-bit) but requires external DAC chip
+// #define USE_I2S_DAC
+
+// ============================================================
+// ESP32 WiFi UDP Communication
+// ============================================================
+// Enable WiFi UDP communication with MMDVMHost instead of serial
+// This allows wireless connection to the host
+// #define USE_WIFI_UDP
+
+// WiFi credentials (set these when USE_WIFI_UDP is enabled)
+// #define WIFI_SSID "your_ssid"
+// #define WIFI_PASSWORD "your_password"
+
+// MMDVMHost UDP settings
+// #define MMDVM_HOST_ADDRESS "192.168.1.100"
+// #define MMDVM_HOST_PORT 3200
+// #define MMDVM_LOCAL_PORT 3201
+
+// WiFi TX power in dBm (2-20). Lower = less ADC interference, shorter range
+// #define WIFI_TX_POWER 15
+
 // For ST Nucleo-64 STM32F446RE board
 // #define STM32F4_NUCLEO_MORPHO_HEADER
 // #define STM32F4_NUCLEO_ARDUINO_HEADER

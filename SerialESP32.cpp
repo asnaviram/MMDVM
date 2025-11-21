@@ -27,35 +27,40 @@
 #include "IOPins.h"
 #include <HardwareSerial.h>
 
+// Include UDP controller if WiFi UDP is enabled
+#if defined(USE_WIFI_UDP)
+#include "UDPControllerESP32.h"
+static bool s_udpInitialized = false;
+#endif
+
 /*
-ESP32 Serial Port Configuration:
+ESP32 Serial/UDP Port Configuration:
 
 Serial Port 1 (n=1): Host communication
-  - ESP32: UART0 (USB-Serial, GPIO1 TX, GPIO3 RX)
+  - Default: UART0 (USB-Serial, GPIO1 TX, GPIO3 RX)
+  - With USE_WIFI_UDP: WiFi UDP to MMDVMHost
   - ESP32-S2/S3: USB CDC native or UART0
   - Default baud: 460800
 
 Serial Port 3 (n=3): Serial repeater (Nextion, etc.)
   - ESP32: UART2 (GPIO17 TX, GPIO16 RX) or UART1
-  - Configurable pins
+  - Always uses hardware serial, not affected by USE_WIFI_UDP
   - Default baud: 9600 (SERIAL_REPEATER_BAUD_RATE)
 
-Note: ESP32 has 3 hardware UARTs:
-  - UART0: Default for USB-Serial bridge (GPIO1/3)
-  - UART1: Available, but default pins may conflict with flash
-  - UART2: Fully available for custom use (ESP32 only, not on S2/S3)
-
-ESP32-S2/S3 have USB CDC for native USB communication.
+WiFi UDP Mode (USE_WIFI_UDP):
+  - Host communication uses WiFi UDP instead of serial
+  - WiFi runs on Core 0, MMDVM on Core 1 (interference mitigation)
+  - Uses ADC1 only (ADC2 conflicts with WiFi)
+  - Power save disabled for consistent timing
 */
 
 // Use Arduino Serial objects
-// Serial (UART0) - Host communication (USB)
+// Serial (UART0) - Host communication (USB) - or UDP if USE_WIFI_UDP
 // Serial1 (UART1) - Available
 // Serial2 (UART2) - Serial repeater (ESP32 only)
 
 #if defined(ESP32S2) || defined(ESP32S3)
 // ESP32-S2/S3 only have UART0 and UART1
-// UART0 is typically used for USB CDC
 // Use UART1 for serial repeater
 static HardwareSerial SerialRepeater(1);  // UART1
 #else
@@ -72,6 +77,47 @@ void CSerialPort::beginInt(uint8_t n, int speed)
 {
     switch (n) {
         case 1U:
+#if defined(USE_WIFI_UDP)
+            // Initialize WiFi UDP for host communication
+            if (!s_udpInitialized) {
+                // Use configured WiFi credentials and host settings
+#if defined(WIFI_SSID) && defined(MMDVM_HOST_ADDRESS)
+                if (udpController.init(
+                        WIFI_SSID,
+#if defined(WIFI_PASSWORD)
+                        WIFI_PASSWORD,
+#else
+                        NULL,
+#endif
+                        MMDVM_HOST_ADDRESS,
+#if defined(MMDVM_HOST_PORT)
+                        MMDVM_HOST_PORT,
+#else
+                        3200,  // Default port
+#endif
+#if defined(MMDVM_LOCAL_PORT)
+                        MMDVM_LOCAL_PORT
+#else
+                        3201   // Default local port
+#endif
+                    )) {
+                    // Set TX power if configured
+#if defined(WIFI_TX_POWER)
+                    udpController.setTxPower(WIFI_TX_POWER);
+#endif
+                    udpController.start();
+                    s_udpInitialized = true;
+                }
+#else
+                // WiFi credentials not configured - fall back to serial
+                Serial.begin(speed);
+                Serial.setRxBufferSize(SERIAL_RX_BUFFER_SIZE);
+                while (!Serial && millis() < 3000) {
+                    ;
+                }
+#endif
+            }
+#else
             // Host serial port - use built-in Serial (UART0/USB)
             Serial.begin(speed);
             Serial.setRxBufferSize(SERIAL_RX_BUFFER_SIZE);
@@ -79,10 +125,11 @@ void CSerialPort::beginInt(uint8_t n, int speed)
             while (!Serial && millis() < 3000) {
                 ; // Wait up to 3 seconds for USB CDC
             }
+#endif
             break;
 
         case 3U:
-            // Serial repeater port
+            // Serial repeater port - always uses hardware serial
 #if defined(SERIAL_REPEATER)
 #if defined(ESP32S2) || defined(ESP32S3)
             // ESP32-S2/S3: Use UART1 with custom pins
@@ -104,6 +151,10 @@ int CSerialPort::availableForReadInt(uint8_t n)
 {
     switch (n) {
         case 1U:
+#if defined(USE_WIFI_UDP)
+            if (s_udpInitialized)
+                return udpController.available();
+#endif
             return Serial.available();
 
         case 3U:
@@ -122,6 +173,10 @@ int CSerialPort::availableForWriteInt(uint8_t n)
 {
     switch (n) {
         case 1U:
+#if defined(USE_WIFI_UDP)
+            if (s_udpInitialized)
+                return 512;  // UDP buffer available
+#endif
             return Serial.availableForWrite();
 
         case 3U:
@@ -140,6 +195,10 @@ uint8_t CSerialPort::readInt(uint8_t n)
 {
     switch (n) {
         case 1U:
+#if defined(USE_WIFI_UDP)
+            if (s_udpInitialized)
+                return udpController.read();
+#endif
             return Serial.read();
 
         case 3U:
@@ -158,6 +217,14 @@ void CSerialPort::writeInt(uint8_t n, const uint8_t* data, uint16_t length, bool
 {
     switch (n) {
         case 1U:
+#if defined(USE_WIFI_UDP)
+            if (s_udpInitialized) {
+                udpController.write(data, length);
+                if (flush)
+                    udpController.flush();
+                break;
+            }
+#endif
             Serial.write(data, length);
             if (flush)
                 Serial.flush();

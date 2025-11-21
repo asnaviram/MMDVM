@@ -324,8 +324,121 @@ void IRAM_ATTR CIO::interrupt() {
 
 ---
 
+## WiFi UDP Communication
+
+The ESP32 port supports WiFi UDP communication with MMDVMHost, allowing wireless operation.
+
+### Enabling WiFi UDP
+
+In `Config.h` or platformio.ini:
+
+```cpp
+#define USE_WIFI_UDP
+#define WIFI_SSID "your_ssid"
+#define WIFI_PASSWORD "your_password"
+#define MMDVM_HOST_ADDRESS "192.168.1.100"
+#define MMDVM_HOST_PORT 3200
+#define MMDVM_LOCAL_PORT 3201
+```
+
+### WiFi/ADC Interference Mitigation
+
+The ESP32 port implements several strategies to minimize WiFi interference:
+
+1. **Dual-Core Isolation**: WiFi runs on Core 0, MMDVM processing on Core 1
+2. **ADC1 Only**: Uses ADC1 channels (ADC2 conflicts with WiFi)
+3. **Power Save Disabled**: WiFi power save is disabled for consistent timing
+4. **Adjustable TX Power**: Can reduce WiFi TX power (2-20 dBm) to reduce interference
+5. **Pause/Resume**: `pauseWiFi()` and `resumeWiFi()` for calibration modes
+
+### WiFi Configuration in platformio.ini
+
+```ini
+[env:esp32-wifi]
+build_flags =
+    -DUSE_WIFI_UDP
+    -DWIFI_SSID=\"your_ssid\"
+    -DWIFI_PASSWORD=\"your_password\"
+    -DMMDVM_HOST_ADDRESS=\"192.168.1.100\"
+    -DMMDVM_HOST_PORT=3200
+    -DWIFI_TX_POWER=15
+```
+
+---
+
+## PWM DAC Option
+
+As an alternative to the 8-bit built-in DAC or external I2S DAC, the ESP32 port supports high-quality PWM-based DAC output.
+
+### Benefits of PWM DAC
+
+- **12-bit resolution** (vs 8-bit built-in DAC)
+- **Works on all ESP32 variants** including ESP32-S3
+- **Simple hardware**: Only requires RC low-pass filter
+- **78kHz carrier frequency**: Easy to filter
+
+### PWM DAC Hardware
+
+Required external circuit:
+```
+GPIO_TX_PIN ----[10kΩ]----+---- Analog Output
+                          |
+                        [100nF]
+                          |
+                         GND
+```
+
+Filter cutoff: ~160Hz (adjustable with R/C values)
+
+For better quality, use a 2nd order active filter:
+```
+GPIO ----[10k]----+----[10k]----+---- Output
+                  |              |
+                [100nF]    [Op-Amp Buffer]
+                  |              |
+                 GND           GND
+```
+
+### Enabling PWM DAC
+
+```cpp
+#define USE_PWM_DAC
+```
+
+### PWM DAC Configuration
+
+The LEDC peripheral is configured for:
+- **Resolution**: 12-bit (0-4095)
+- **Frequency**: 78.125kHz carrier
+- **High-speed mode**: ESP32 only (low-speed on S2/S3)
+
+---
+
+## Build Configurations
+
+Available PlatformIO environments:
+
+| Environment | Description |
+|-------------|-------------|
+| `esp32` | Basic ESP32 with built-in 8-bit DAC |
+| `esp32s2` | ESP32-S2 with built-in DAC |
+| `esp32s3` | ESP32-S3 with I2S external DAC |
+| `esp32-pwm` | ESP32 with PWM DAC (12-bit) |
+| `esp32s3-pwm` | ESP32-S3 with PWM DAC |
+| `esp32-wifi` | ESP32 with WiFi UDP |
+| `esp32-wifi-pwm` | ESP32 with WiFi + PWM DAC |
+| `esp32s3-wifi-pwm` | ESP32-S3 with WiFi + PWM DAC |
+
+Build command:
+```bash
+pio run -e esp32-wifi-pwm
+```
+
+---
+
 ## Version History
 
+- v1.1 (2025-11-21): Added WiFi UDP and PWM DAC support
 - v1.0 (2025-11-21): Initial ESP32 port supporting ESP32, ESP32-S2, ESP32-S3
 
 ## License

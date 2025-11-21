@@ -29,26 +29,81 @@
 #include <driver/timer.h>
 #include <esp_system.h>
 
-// ESP32 has 8-bit DAC, ESP32-S3 requires I2S external DAC
-#if !defined(ESP32S3)
+/*
+ * DAC Output Options for ESP32:
+ *
+ * 1. USE_PWM_DAC - High-quality PWM-based DAC (all ESP32 variants)
+ *    - Uses LEDC peripheral for precise PWM
+ *    - Requires external RC low-pass filter (10k + 100nF recommended)
+ *    - Up to 12-bit resolution at 24kHz carrier frequency
+ *    - Good for ESP32-S3 which has no built-in DAC
+ *
+ * 2. Built-in DAC (ESP32, ESP32-S2 only)
+ *    - 8-bit resolution
+ *    - No external components needed
+ *    - Default option for ESP32/S2
+ *
+ * 3. I2S External DAC (ESP32-S3 default)
+ *    - 16-bit resolution possible
+ *    - Requires I2S DAC chip (PCM5102, MAX98357, etc.)
+ *    - Best quality option
+ *
+ * PWM DAC Hardware:
+ *   GPIO_PWM_TX ----[10k]----+---- Analog Output
+ *                            |
+ *                          [100nF]
+ *                            |
+ *                           GND
+ *
+ * Filter cutoff: ~160Hz (well below audio frequencies we generate)
+ * For better performance, use 2nd order filter or higher.
+ */
+
+// PWM DAC configuration
+#if defined(USE_PWM_DAC)
+#include <driver/ledc.h>
+
+// PWM parameters for high-quality audio
+// ESP32 LEDC can do up to 13-bit at certain frequencies
+// For 24kHz sampling, we use high-frequency PWM carrier
+#define PWM_CHANNEL      LEDC_CHANNEL_0
+#define PWM_TIMER        LEDC_TIMER_0
+#define PWM_SPEED_MODE   LEDC_HIGH_SPEED_MODE  // High-speed mode for better timing
+
+#if defined(ESP32S3) || defined(ESP32S2)
+// S2/S3 don't have high-speed mode, use low-speed
+#undef PWM_SPEED_MODE
+#define PWM_SPEED_MODE   LEDC_LOW_SPEED_MODE
+#endif
+
+// PWM resolution and frequency
+// Higher PWM frequency = less filtering needed, but lower resolution
+// 12-bit at 78.125kHz (good balance for audio)
+#define PWM_RESOLUTION   LEDC_TIMER_12_BIT     // 12-bit resolution (0-4095)
+#define PWM_FREQUENCY    78125                  // ~78kHz carrier (80MHz / 1024)
+#define PWM_MAX_VALUE    4095                   // 12-bit max
+
+#endif // USE_PWM_DAC
+
+// ESP32 built-in DAC (not for S3)
+#if !defined(ESP32S3) && !defined(USE_PWM_DAC)
 #include <driver/dac.h>
 #endif
 
-#if defined(ESP32S3)
+// I2S for external DAC (ESP32-S3 default, or when USE_I2S_DAC defined)
+#if defined(ESP32S3) && !defined(USE_PWM_DAC)
+#define USE_I2S_DAC
+#endif
+
+#if defined(USE_I2S_DAC)
 #include <driver/i2s.h>
 #endif
 
 // Sampling frequency - must be exactly 24kHz
 #define SAMP_FREQ   24000
 
-// DC offset for samples
-#if defined(ESP32S3)
-// 12-bit samples scaled for I2S output
+// DC offset for samples (12-bit mid-scale)
 const uint16_t DC_OFFSET = 2048U;
-#else
-// 8-bit DAC centered at 128
-const uint16_t DC_OFFSET = 2048U;  // Internal processing still uses 12-bit
-#endif
 
 // Timer ISR handler - must be in IRAM for deterministic timing
 static hw_timer_t* s_timer = NULL;
@@ -57,8 +112,8 @@ static volatile bool s_timerReady = false;
 // Forward declaration for ISR
 void IRAM_ATTR onTimerISR();
 
-#if defined(ESP32S3)
-// I2S DMA buffer for ESP32-S3 external DAC
+#if defined(USE_I2S_DAC)
+// I2S DMA buffer for external DAC
 static int16_t s_i2sTxBuffer[64];
 static volatile uint8_t s_i2sBufIdx = 0;
 #endif
@@ -145,9 +200,31 @@ void CIO::startInt()
     adc1_config_channel_atten(PIN_RSSI_CH, ADC_ATTEN_DB_11);
 #endif
 
-    // Configure DAC output
-#if defined(ESP32S3)
-    // ESP32-S3 has no built-in DAC - use I2S with external DAC
+    // Configure DAC output based on selected method
+#if defined(USE_PWM_DAC)
+    // High-quality PWM DAC using LEDC peripheral
+    ledc_timer_config_t timerConfig = {
+        .speed_mode = PWM_SPEED_MODE,
+        .duty_resolution = PWM_RESOLUTION,
+        .timer_num = PWM_TIMER,
+        .freq_hz = PWM_FREQUENCY,
+        .clk_cfg = LEDC_AUTO_CLK
+    };
+    ledc_timer_config(&timerConfig);
+
+    ledc_channel_config_t channelConfig = {
+        .gpio_num = PIN_TX,
+        .speed_mode = PWM_SPEED_MODE,
+        .channel = PWM_CHANNEL,
+        .intr_type = LEDC_INTR_DISABLE,
+        .timer_sel = PWM_TIMER,
+        .duty = DC_OFFSET,  // Start at mid-scale
+        .hpoint = 0
+    };
+    ledc_channel_config(&channelConfig);
+
+#elif defined(USE_I2S_DAC)
+    // ESP32-S3 or explicit I2S DAC: use I2S with external DAC
     i2s_config_t i2s_config = {
         .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
         .sample_rate = SAMP_FREQ,
@@ -173,8 +250,9 @@ void CIO::startInt()
     i2s_driver_install(I2S_NUM_0, &i2s_config, 0, NULL);
     i2s_set_pin(I2S_NUM_0, &pin_config);
     i2s_zero_dma_buffer(I2S_NUM_0);
+
 #else
-    // ESP32 and ESP32-S2 have built-in 8-bit DAC
+    // ESP32/ESP32-S2: Built-in 8-bit DAC
     dac_output_enable((dac_channel_t)PIN_TX_CH);
 #endif
 
@@ -204,16 +282,22 @@ void IRAM_ATTR CIO::interrupt()
     // Get sample from TX buffer
     m_txBuffer.get(sample);
 
-    // Output to DAC
-#if defined(ESP32S3)
-    // ESP32-S3: Output via I2S to external DAC
-    // Scale 12-bit sample to 16-bit for I2S
+    // Output to DAC based on selected method
+#if defined(USE_PWM_DAC)
+    // PWM DAC: Direct 12-bit value to LEDC duty cycle
+    // Using direct register write for speed in ISR
+    ledc_set_duty_fast(PWM_SPEED_MODE, PWM_CHANNEL, sample.sample);
+    ledc_update_duty(PWM_SPEED_MODE, PWM_CHANNEL);
+
+#elif defined(USE_I2S_DAC)
+    // I2S external DAC: Scale 12-bit to 16-bit signed
     int16_t i2sSample = (int16_t)((sample.sample - 2048) << 4);
     size_t bytes_written;
     i2s_write(I2S_NUM_0, &i2sSample, sizeof(i2sSample), &bytes_written, 0);
+
 #else
-    // ESP32/S2: Scale 12-bit sample to 8-bit for built-in DAC
-    uint8_t dacValue = sample.sample >> 4;  // 12-bit to 8-bit
+    // Built-in DAC: Scale 12-bit to 8-bit
+    uint8_t dacValue = sample.sample >> 4;
     dac_output_voltage((dac_channel_t)PIN_TX_CH, dacValue);
 #endif
 
