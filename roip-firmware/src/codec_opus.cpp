@@ -8,8 +8,15 @@
 #include <cstring>
 #include <algorithm>
 
+// Forward declare Serial for logging
+extern HardwareSerial Serial;
+
 // Macros for lock/unlock with timeout
 #define OPUS_LOCK_TIMEOUT_MS 5000
+
+// Helper to convert from libopus error codes to our OpusError enum
+// Note: libopus OPUS_OK is defined as 0 (int), we need OpusError type
+#define OPUS_ERR_TO_ROIP(err) (static_cast<OpusError>(err))
 
 /*
  * Constructor - Initialize codec wrapper
@@ -82,7 +89,7 @@ OpusError OpusCodec::validateBitrate(uint32_t bitrate) {
     if (bitrate < OPUS_MIN_BITRATE || bitrate > OPUS_MAX_BITRATE) {
         return OPUS_ERR_INVALID_PARAMS;
     }
-    return OPUS_OK;
+    return OPUS_ERR_TO_ROIP(OPUS_OK);
 }
 
 /*
@@ -92,7 +99,7 @@ OpusError OpusCodec::validateComplexity(uint8_t complexity) {
     if (complexity > OPUS_MAX_COMPLEXITY) {
         return OPUS_ERR_INVALID_PARAMS;
     }
-    return OPUS_OK;
+    return OPUS_ERR_TO_ROIP(OPUS_OK);
 }
 
 /*
@@ -109,7 +116,7 @@ OpusError OpusCodec::validateFrameSize(uint32_t frame_size) {
         return OPUS_ERR_INVALID_PARAMS;
     }
 
-    return OPUS_OK;
+    return OPUS_ERR_TO_ROIP(OPUS_OK);
 }
 
 /*
@@ -222,7 +229,7 @@ OpusError OpusCodec::initEncoder(
 
     xSemaphoreGive(encode_mutex);
 
-    return OPUS_OK;
+    return OPUS_ERR_TO_ROIP(OPUS_OK);
 }
 
 /*
@@ -273,7 +280,7 @@ OpusError OpusCodec::initDecoder(
 
     xSemaphoreGive(decode_mutex);
 
-    return OPUS_OK;
+    return OPUS_ERR_TO_ROIP(OPUS_OK);
 }
 
 /*
@@ -302,7 +309,7 @@ OpusError OpusCodec::setEncoderBitrate(uint32_t newBitrate) {
     }
 
     bitrate = newBitrate;
-    return OPUS_OK;
+    return OPUS_ERR_TO_ROIP(OPUS_OK);
 }
 
 /*
@@ -341,7 +348,7 @@ OpusError OpusCodec::setEncoderComplexity(uint8_t newComplexity) {
     }
 
     complexity = newComplexity;
-    return OPUS_OK;
+    return OPUS_ERR_TO_ROIP(OPUS_OK);
 }
 
 /*
@@ -385,7 +392,7 @@ OpusError OpusCodec::setFECEnabled(bool enabled, uint8_t redundancy_percentage) 
         }
     }
 
-    return OPUS_OK;
+    return OPUS_ERR_TO_ROIP(OPUS_OK);
 }
 
 /*
@@ -417,7 +424,7 @@ OpusError OpusCodec::setDTXEnabled(bool enabled) {
         }
     }
 
-    return OPUS_OK;
+    return OPUS_ERR_TO_ROIP(OPUS_OK);
 }
 
 /*
@@ -453,7 +460,7 @@ OpusError OpusCodec::setPacketLossPercentage(uint8_t loss_percentage) {
         }
     }
 
-    return OPUS_OK;
+    return OPUS_ERR_TO_ROIP(OPUS_OK);
 }
 
 /*
@@ -657,7 +664,7 @@ OpusError OpusCodec::resetDecoder() {
         return OPUS_ERR_DECODER_RESET;
     }
 
-    return OPUS_OK;
+    return OPUS_ERR_TO_ROIP(OPUS_OK);
 }
 
 /*
@@ -681,7 +688,7 @@ OpusError OpusCodec::resetEncoder() {
         return OPUS_ERR_INVALID_PARAMS;
     }
 
-    return OPUS_OK;
+    return OPUS_ERR_TO_ROIP(OPUS_OK);
 }
 
 /*
@@ -811,5 +818,5 @@ OpusError OpusCodec::setQualityPreset(uint8_t preset) {
         return err;
     }
 
-    return OPUS_OK;
+    return OPUS_ERR_TO_ROIP(OPUS_OK);
 }

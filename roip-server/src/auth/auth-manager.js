@@ -12,7 +12,19 @@ class AuthManager extends EventEmitter {
     super();
 
     // Configuration
-    this.jwtSecret = config.jwtSecret || process.env.JWT_SECRET || 'change-me-in-production';
+    this.jwtSecret = config.jwtSecret || process.env.JWT_SECRET;
+
+    // SECURITY: Reject insecure default JWT secrets
+    if (!this.jwtSecret ||
+        this.jwtSecret === 'change-me-in-production' ||
+        this.jwtSecret === 'CHANGE-THIS-SECRET-IN-PRODUCTION' ||
+        this.jwtSecret.length < 32) {
+      throw new Error(
+        'SECURITY ERROR: JWT_SECRET must be set to a secure random value (minimum 32 characters). ' +
+        'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'base64\'))"'
+      );
+    }
+
     this.jwtExpiry = config.jwtExpiry || '24h';
     this.jwtRefreshExpiry = config.jwtRefreshExpiry || '7d';
     this.bcryptRounds = config.bcryptRounds || 10;

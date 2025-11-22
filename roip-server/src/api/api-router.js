@@ -8,6 +8,7 @@ import express from 'express';
 import jwt from 'jsonwebtoken';
 import Joi from 'joi';
 import rateLimit from 'express-rate-limit';
+import NodeCache from 'node-cache';
 
 /**
  * APIRouter class - Complete REST API implementation
@@ -19,12 +20,83 @@ export class APIRouter {
     this.logger = logger;
     this.router = express.Router();
 
+    // Initialize response cache
+    this.initResponseCache();
+
     // Initialize rate limiters
     this.initRateLimiters();
 
     // Register routes
     this.registerRoutes();
   }
+
+  /**
+   * Initialize response cache for API endpoints
+   */
+  initResponseCache() {
+    // Cache with default TTL of 30 seconds
+    this.cache = new NodeCache({
+      stdTTL: this.config.performance?.cache?.defaultTTL || 30,
+      checkperiod: this.config.performance?.cache?.checkPeriod || 120,
+      useClones: false // Better performance, but responses must not be modified
+    });
+
+    this.logger.info('✓ API response cache initialized', {
+      defaultTTL: this.cache.options.stdTTL,
+      checkPeriod: this.cache.options.checkperiod
+    });
+
+    // Log cache statistics periodically
+    if (this.config.performance?.cache?.logStats) {
+      setInterval(() => {
+        const stats = this.cache.getStats();
+        this.logger.debug('Cache statistics', {
+          keys: stats.keys,
+          hits: stats.hits,
+          misses: stats.misses,
+          hitRate: stats.hits > 0 ? ((stats.hits / (stats.hits + stats.misses)) * 100).toFixed(2) + '%' : '0%'
+        });
+      }, 60000); // Log every minute
+    }
+  }
+
+  /**
+   * Caching middleware factory
+   */
+  cacheMiddleware = (duration) => {
+    return (req, res, next) => {
+      // Skip caching for non-GET requests
+      if (req.method !== 'GET') {
+        return next();
+      }
+
+      // Check if caching is enabled
+      if (this.config.performance?.cache?.enabled === false) {
+        return next();
+      }
+
+      // Generate cache key from URL and query params
+      const key = `${req.originalUrl || req.url}`;
+
+      // Try to get cached response
+      const cached = this.cache.get(key);
+      if (cached) {
+        this.logger.debug('Cache hit', { key });
+        return res.json(cached);
+      }
+
+      // Cache miss - intercept response
+      const originalJson = res.json.bind(res);
+      res.json = (body) => {
+        // Store in cache
+        this.cache.set(key, body, duration || this.cache.options.stdTTL);
+        this.logger.debug('Cache set', { key, ttl: duration || this.cache.options.stdTTL });
+        return originalJson(body);
+      };
+
+      next();
+    };
+  };
 
   /**
    * Initialize rate limiters for different endpoints
@@ -167,6 +239,7 @@ export class APIRouter {
     this.router.get(
       '/devices',
       this.authenticateJWT,
+      this.cacheMiddleware(30), // Cache for 30 seconds
       this.handleGetDevices.bind(this)
     );
 
@@ -266,6 +339,7 @@ export class APIRouter {
     this.router.get(
       '/routes',
       this.authenticateJWT,
+      this.cacheMiddleware(60), // Cache for 60 seconds
       this.handleGetRoutes.bind(this)
     );
 
@@ -362,6 +436,7 @@ export class APIRouter {
     this.router.get(
       '/status',
       this.optionalAuth,
+      this.cacheMiddleware(10), // Cache for 10 seconds
       this.handleGetStatus.bind(this)
     );
 
@@ -373,6 +448,7 @@ export class APIRouter {
     this.router.get(
       '/status/metrics',
       this.authenticateJWT,
+      this.cacheMiddleware(5), // Cache for 5 seconds
       this.handleGetMetrics.bind(this)
     );
 
@@ -385,6 +461,7 @@ export class APIRouter {
     this.router.get(
       '/status/connections',
       this.authenticateJWT,
+      this.cacheMiddleware(10), // Cache for 10 seconds
       this.handleGetConnections.bind(this)
     );
 

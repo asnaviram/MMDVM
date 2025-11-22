@@ -8,12 +8,15 @@
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <esp_netif.h>
-#include <MDNS.h>
+#include <ESPmDNS.h>
 #include <lwip/sockets.h>
 #include <lwip/dns.h>
 #include <esp_sntp.h>
 #include <cstring>
 #include <algorithm>
+
+// Forward declare Serial for logging
+extern HardwareSerial Serial;
 
 // Static instance for event handler callback
 NetworkManager* NetworkManager::instance_ = nullptr;
@@ -146,7 +149,8 @@ bool NetworkManager::end() {
 
     // Disconnect WiFi
     disconnect();
-    WiFi.end();
+    // Note: WiFi.end() is not available in some ESP32 Arduino versions
+    // WiFi.disconnect() is sufficient for cleanup
 
     initialized_ = false;
     state_ = WiFiState::IDLE;
@@ -671,27 +675,27 @@ const char* NetworkManager::getStateString() {
  */
 const char* NetworkManager::getDisconnectReasonString() {
     switch (stats_.last_disconnect_reason) {
-        case WIFI_DISCONNECT_REASON_UNSPECIFIED:
+        case WIFI_REASON_UNSPECIFIED:
             return "Unspecified";
-        case WIFI_DISCONNECT_REASON_AUTH_EXPIRE:
+        case WIFI_REASON_AUTH_EXPIRE:
             return "Authentication expired";
-        case WIFI_DISCONNECT_REASON_AUTH_LEAVE:
+        case WIFI_REASON_AUTH_LEAVE:
             return "Authentication leave";
-        case WIFI_DISCONNECT_REASON_ASSOC_EXPIRE:
+        case WIFI_REASON_ASSOC_EXPIRE:
             return "Association expired";
-        case WIFI_DISCONNECT_REASON_ASSOC_TOOMANY:
+        case WIFI_REASON_ASSOC_TOOMANY:
             return "Too many associations";
-        case WIFI_DISCONNECT_REASON_NOT_AUTHED:
+        case WIFI_REASON_NOT_AUTHED:
             return "Not authenticated";
-        case WIFI_DISCONNECT_REASON_NOT_ASSOCED:
+        case WIFI_REASON_NOT_ASSOCED:
             return "Not associated";
-        case WIFI_DISCONNECT_REASON_ASSOC_LEAVE:
+        case WIFI_REASON_ASSOC_LEAVE:
             return "Association leave";
-        case WIFI_DISCONNECT_REASON_ASSOC_NOT_AUTHED:
+        case WIFI_REASON_ASSOC_NOT_AUTHED:
             return "Association not authenticated";
-        case WIFI_DISCONNECT_REASON_DISASSOC_PWRCAP_BAD:
+        case WIFI_REASON_DISASSOC_PWRCAP_BAD:
             return "Power capability bad";
-        case WIFI_DISCONNECT_REASON_DISASSOC_SUPCHAN_BAD:
+        case WIFI_REASON_DISASSOC_SUPCHAN_BAD:
             return "Supported channel bad";
         default:
             return "Unknown";
@@ -954,11 +958,14 @@ bool NetworkManager::setDNS(const char* dns1, const char* dns2) {
         return false;
     }
 
-    if (dns2 && !ip2.fromString(dns2)) {
-        return false;
+    if (dns2 && strlen(dns2) > 0) {
+        if (!ip2.fromString(dns2)) {
+            return false;
+        }
+        WiFi.config(WiFi.localIP(), WiFi.gatewayIP(), WiFi.subnetMask(), ip1, ip2);
+    } else {
+        WiFi.config(WiFi.localIP(), WiFi.gatewayIP(), WiFi.subnetMask(), ip1);
     }
-
-    WiFi.setDNS(ip1, dns2 ? ip2 : IPAddress(0, 0, 0, 0));
 
     return true;
 }
@@ -1015,7 +1022,21 @@ bool NetworkManager::setTxPower(uint8_t power_dbm) {
         power_dbm = 20;
     }
 
-    WiFi.setTxPower(power_dbm);
+    // Convert dBm to wifi_power_t enum
+    wifi_power_t power;
+    if (power_dbm >= 20) power = WIFI_POWER_19_5dBm;
+    else if (power_dbm >= 19) power = WIFI_POWER_19dBm;
+    else if (power_dbm >= 18) power = WIFI_POWER_18_5dBm;
+    else if (power_dbm >= 17) power = WIFI_POWER_17dBm;
+    else if (power_dbm >= 15) power = WIFI_POWER_15dBm;
+    else if (power_dbm >= 13) power = WIFI_POWER_13dBm;
+    else if (power_dbm >= 11) power = WIFI_POWER_11dBm;
+    else if (power_dbm >= 8) power = WIFI_POWER_8_5dBm;
+    else if (power_dbm >= 7) power = WIFI_POWER_7dBm;
+    else if (power_dbm >= 5) power = WIFI_POWER_5dBm;
+    else power = WIFI_POWER_2dBm;
+
+    WiFi.setTxPower(power);
 
     return true;
 }

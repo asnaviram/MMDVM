@@ -1,0 +1,480 @@
+{
+  "dashboard": {
+    "title": "RoIP System Performance Dashboard",
+    "tags": ["roip", "performance", "monitoring"],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 1,
+    "refresh": "30s",
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "Request Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "{{method}} {{route}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "reqps", "label": "Requests/sec"},
+          {"format": "short"}
+        ],
+        "legend": {"show": true, "alignAsTable": true, "avg": true, "current": true},
+        "tooltip": {"shared": true}
+      },
+      {
+        "id": 2,
+        "title": "Response Time (p50, p95, p99)",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_ms_bucket[5m]))",
+            "legendFormat": "p50",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_ms_bucket[5m]))",
+            "legendFormat": "p95",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(http_request_duration_ms_bucket[5m]))",
+            "legendFormat": "p99",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "ms", "label": "Response Time"},
+          {"format": "short"}
+        ],
+        "legend": {"show": true, "alignAsTable": true, "avg": true, "current": true},
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"params": [500], "type": "gt"},
+              "query": {"params": ["B", "5m", "now"]},
+              "type": "query"
+            }
+          ],
+          "name": "High Response Time Alert"
+        }
+      },
+      {
+        "id": 3,
+        "title": "Error Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(http_requests_total{status_code=~\"5..\"}[5m]) / rate(http_requests_total[5m]) * 100",
+            "legendFormat": "5xx Error Rate",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(http_requests_total{status_code=~\"4..\"}[5m]) / rate(http_requests_total[5m]) * 100",
+            "legendFormat": "4xx Error Rate",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "percent", "label": "Error Rate"},
+          {"format": "short"}
+        ],
+        "legend": {"show": true},
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"params": [1], "type": "gt"},
+              "query": {"params": ["A", "5m", "now"]},
+              "type": "query"
+            }
+          ],
+          "name": "High Error Rate Alert"
+        }
+      },
+      {
+        "id": 4,
+        "title": "CPU Usage",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(process_cpu_seconds_total[5m]) * 100",
+            "legendFormat": "{{instance}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "percent", "label": "CPU %", "max": 100},
+          {"format": "short"}
+        ],
+        "legend": {"show": true, "alignAsTable": true, "avg": true, "current": true}
+      },
+      {
+        "id": 5,
+        "title": "Memory Usage",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes / 1024 / 1024",
+            "legendFormat": "RSS - {{instance}}",
+            "refId": "A"
+          },
+          {
+            "expr": "nodejs_heap_size_used_bytes / 1024 / 1024",
+            "legendFormat": "Heap Used - {{instance}}",
+            "refId": "B"
+          },
+          {
+            "expr": "nodejs_heap_size_total_bytes / 1024 / 1024",
+            "legendFormat": "Heap Total - {{instance}}",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "mbytes", "label": "Memory"},
+          {"format": "short"}
+        ],
+        "legend": {"show": true, "alignAsTable": true, "avg": true, "current": true}
+      },
+      {
+        "id": 6,
+        "title": "Database Connection Pool",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 16, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "pg_pool_size",
+            "legendFormat": "Pool Size - {{instance}}",
+            "refId": "A"
+          },
+          {
+            "expr": "pg_pool_idle",
+            "legendFormat": "Idle Connections - {{instance}}",
+            "refId": "B"
+          },
+          {
+            "expr": "pg_pool_waiting",
+            "legendFormat": "Waiting - {{instance}}",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Connections"},
+          {"format": "short"}
+        ],
+        "legend": {"show": true, "alignAsTable": true, "current": true}
+      },
+      {
+        "id": 7,
+        "title": "Cache Hit Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 24, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(cache_hits_total[5m]) / (rate(cache_hits_total[5m]) + rate(cache_misses_total[5m])) * 100",
+            "legendFormat": "L1 Hit Rate",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(redis_cache_hits_total[5m]) / (rate(redis_cache_hits_total[5m]) + rate(redis_cache_misses_total[5m])) * 100",
+            "legendFormat": "L2 Hit Rate",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "percent", "label": "Hit Rate", "max": 100},
+          {"format": "short"}
+        ],
+        "legend": {"show": true, "alignAsTable": true, "avg": true, "current": true}
+      },
+      {
+        "id": 8,
+        "title": "Active WebSocket Connections",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 24, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "websocket_active_connections",
+            "legendFormat": "{{instance}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "short", "label": "Connections"},
+          {"format": "short"}
+        ],
+        "legend": {"show": true, "alignAsTable": true, "current": true, "max": true}
+      },
+      {
+        "id": 9,
+        "title": "RTP Packet Rate",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 32, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(rtp_packets_total{direction=\"rx\"}[5m])",
+            "legendFormat": "Received - {{instance}}",
+            "refId": "A"
+          },
+          {
+            "expr": "rate(rtp_packets_total{direction=\"tx\"}[5m])",
+            "legendFormat": "Transmitted - {{instance}}",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "pps", "label": "Packets/sec"},
+          {"format": "short"}
+        ],
+        "legend": {"show": true, "alignAsTable": true, "avg": true, "current": true}
+      },
+      {
+        "id": 10,
+        "title": "RTP Latency",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 32, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(rtp_latency_ms_bucket[5m]))",
+            "legendFormat": "p50",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, rate(rtp_latency_ms_bucket[5m]))",
+            "legendFormat": "p95",
+            "refId": "B"
+          },
+          {
+            "expr": "histogram_quantile(0.99, rate(rtp_latency_ms_bucket[5m]))",
+            "legendFormat": "p99",
+            "refId": "C"
+          }
+        ],
+        "yaxes": [
+          {"format": "ms", "label": "Latency"},
+          {"format": "short"}
+        ],
+        "legend": {"show": true, "alignAsTable": true, "avg": true, "current": true},
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"params": [150], "type": "gt"},
+              "query": {"params": ["B", "5m", "now"]},
+              "type": "query"
+            }
+          ],
+          "name": "High RTP Latency Alert"
+        }
+      },
+      {
+        "id": 11,
+        "title": "Jitter",
+        "type": "graph",
+        "gridPos": {"x": 0, "y": 40, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "avg(rtp_jitter_ms)",
+            "legendFormat": "Average Jitter",
+            "refId": "A"
+          },
+          {
+            "expr": "max(rtp_jitter_ms)",
+            "legendFormat": "Max Jitter",
+            "refId": "B"
+          }
+        ],
+        "yaxes": [
+          {"format": "ms", "label": "Jitter"},
+          {"format": "short"}
+        ],
+        "legend": {"show": true, "alignAsTable": true, "avg": true, "max": true}
+      },
+      {
+        "id": 12,
+        "title": "Packet Loss Rate",
+        "type": "graph",
+        "gridPos": {"x": 12, "y": 40, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "rate(rtp_packets_lost_total[5m]) / rate(rtp_packets_total[5m]) * 100",
+            "legendFormat": "{{instance}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "percent", "label": "Packet Loss %"},
+          {"format": "short"}
+        ],
+        "legend": {"show": true, "alignAsTable": true, "avg": true, "current": true},
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"params": [5], "type": "gt"},
+              "query": {"params": ["A", "5m", "now"]},
+              "type": "query"
+            }
+          ],
+          "name": "High Packet Loss Alert"
+        }
+      },
+      {
+        "id": 13,
+        "title": "Active Calls",
+        "type": "stat",
+        "gridPos": {"x": 0, "y": 48, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "active_calls_total",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "orientation": "auto",
+          "colorMode": "value"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 50, "color": "yellow"},
+                {"value": 80, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 14,
+        "title": "Audio Quality Score",
+        "type": "gauge",
+        "gridPos": {"x": 6, "y": 48, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "avg(audio_quality_score)",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "none",
+            "min": 0,
+            "max": 100,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 60, "color": "yellow"},
+                {"value": 80, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 15,
+        "title": "Database Query Duration (p95)",
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 48, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(db_query_duration_ms_bucket[5m]))",
+            "refId": "A"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "orientation": "auto",
+          "colorMode": "value"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "ms",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 100, "color": "yellow"},
+                {"value": 500, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 16,
+        "title": "Event Loop Lag",
+        "type": "graph",
+        "gridPos": {"x": 18, "y": 48, "w": 6, "h": 4},
+        "targets": [
+          {
+            "expr": "nodejs_eventloop_lag_seconds * 1000",
+            "legendFormat": "{{instance}}",
+            "refId": "A"
+          }
+        ],
+        "yaxes": [
+          {"format": "ms", "label": "Lag"},
+          {"format": "short"}
+        ],
+        "alert": {
+          "conditions": [
+            {
+              "evaluator": {"params": [100], "type": "gt"},
+              "query": {"params": ["A", "5m", "now"]},
+              "type": "query"
+            }
+          ],
+          "name": "High Event Loop Lag Alert"
+        }
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "instance",
+          "type": "query",
+          "query": "label_values(http_requests_total, instance)",
+          "current": {"text": "All", "value": "$__all"},
+          "includeAll": true,
+          "multi": true
+        },
+        {
+          "name": "interval",
+          "type": "interval",
+          "query": "1m,5m,10m,30m,1h",
+          "current": {"text": "5m", "value": "5m"}
+        }
+      ]
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "Deployments",
+          "datasource": "Prometheus",
+          "expr": "changes(process_start_time_seconds[5m]) > 0",
+          "iconColor": "blue",
+          "tagKeys": "version"
+        }
+      ]
+    }
+  }
+}

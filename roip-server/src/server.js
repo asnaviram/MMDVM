@@ -9,11 +9,16 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import YAML from 'yaml';
+import http from 'http';
+import https from 'https';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import { createLogger, format, transports } from 'winston';
+import cluster from 'cluster';
+import os from 'os';
+import v8 from 'v8';
 
 import { SIPServer } from './sip/sip-server.js';
 import { RTPManager } from './rtp/rtp-manager.js';
@@ -76,6 +81,18 @@ class RoIPServer {
     }
     if (process.env.LOG_LEVEL) {
       this.config.logging.level = process.env.LOG_LEVEL;
+    }
+    if (process.env.TLS_ENABLED) {
+      this.config.tls.enabled = process.env.TLS_ENABLED === 'true';
+    }
+    if (process.env.TLS_CERT) {
+      this.config.tls.cert = process.env.TLS_CERT;
+    }
+    if (process.env.TLS_KEY) {
+      this.config.tls.key = process.env.TLS_KEY;
+    }
+    if (process.env.TLS_CA) {
+      this.config.tls.ca = process.env.TLS_CA;
     }
   }
 
@@ -233,8 +250,35 @@ class RoIPServer {
     const app = express();
 
     // Security middleware
-    app.use(helmet());
-    app.use(compression());
+    app.use(helmet({
+      hsts: {
+        maxAge: 31536000,
+        includeSubDomains: true,
+        preload: true
+      }
+    }));
+
+    // Enhanced compression middleware with performance tuning
+    app.use(compression({
+      level: this.config.performance?.compression?.level || 6,
+      threshold: this.config.performance?.compression?.threshold || 1024,
+      filter: (req, res) => {
+        if (req.headers['x-no-compression']) {
+          return false;
+        }
+        return compression.filter(req, res);
+      }
+    }));
+
+    // Additional security headers
+    app.use((req, res, next) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('X-Frame-Options', 'DENY');
+      res.setHeader('X-XSS-Protection', '1; mode=block');
+      res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+      res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+      next();
+    });
 
     // CORS
     if (this.config.server.api.enable_cors) {
@@ -264,7 +308,8 @@ class RoIPServer {
         res.json({
           status: 'ok',
           uptime: process.uptime(),
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          tls: this.config.tls?.enabled || false
         });
       });
     }
@@ -285,10 +330,86 @@ class RoIPServer {
       });
     });
 
-    // Start server
-    this.components.apiServer = app.listen(this.config.server.api.port, this.config.server.host, () => {
-      this.logger.info(`✓ Web API listening on http://${this.config.server.host}:${this.config.server.api.port}`);
-    });
+    // Create server based on TLS configuration
+    const tlsConfig = this.config.tls || { enabled: false };
+
+    if (tlsConfig.enabled) {
+      try {
+        // Load TLS certificates
+        const tlsOptions = {
+          cert: fs.readFileSync(tlsConfig.cert),
+          key: fs.readFileSync(tlsConfig.key)
+        };
+
+        // Add CA certificate if provided
+        if (tlsConfig.ca) {
+          tlsOptions.ca = fs.readFileSync(tlsConfig.ca);
+        }
+
+        // Create HTTPS server
+        this.components.apiServer = https.createServer(tlsOptions, app);
+
+        this.components.apiServer.listen(this.config.server.api.port, this.config.server.host, () => {
+          this.logger.info(`✓ Web API listening on https://${this.config.server.host}:${this.config.server.api.port}`);
+        });
+
+        // Configure HTTP keep-alive for better performance
+        this.configureKeepAlive(this.components.apiServer);
+
+        // Optionally create HTTP server for redirect
+        if (tlsConfig.redirect_http) {
+          const httpApp = express();
+          httpApp.use((req, res) => {
+            const httpsUrl = `https://${req.hostname}:${this.config.server.api.port}${req.url}`;
+            this.logger.debug(`Redirecting HTTP to HTTPS: ${httpsUrl}`);
+            res.redirect(301, httpsUrl);
+          });
+
+          this.components.httpRedirectServer = http.createServer(httpApp);
+          const httpPort = tlsConfig.http_redirect_port || 8079;
+
+          this.components.httpRedirectServer.listen(httpPort, this.config.server.host, () => {
+            this.logger.info(`✓ HTTP redirect server listening on http://${this.config.server.host}:${httpPort}`);
+          });
+        }
+
+      } catch (error) {
+        this.logger.error(`Failed to load TLS certificates: ${error.message}`);
+        this.logger.warn('Falling back to HTTP mode');
+
+        // Fall back to HTTP
+        this.components.apiServer = http.createServer(app);
+        this.components.apiServer.listen(this.config.server.api.port, this.config.server.host, () => {
+          this.logger.info(`✓ Web API listening on http://${this.config.server.host}:${this.config.server.api.port}`);
+        });
+
+        // Configure HTTP keep-alive
+        this.configureKeepAlive(this.components.apiServer);
+      }
+    } else {
+      // Create HTTP server
+      this.components.apiServer = http.createServer(app);
+      this.components.apiServer.listen(this.config.server.api.port, this.config.server.host, () => {
+        this.logger.info(`✓ Web API listening on http://${this.config.server.host}:${this.config.server.api.port}`);
+      });
+
+      // Configure HTTP keep-alive
+      this.configureKeepAlive(this.components.apiServer);
+    }
+  }
+
+  /**
+   * Configure HTTP keep-alive settings for better performance
+   */
+  configureKeepAlive(server) {
+    if (this.config.performance?.keepAlive?.enabled !== false) {
+      server.keepAliveTimeout = this.config.performance?.keepAlive?.timeout || 65000;
+      server.headersTimeout = this.config.performance?.keepAlive?.headersTimeout || 66000;
+      this.logger.info('✓ HTTP keep-alive configured', {
+        keepAliveTimeout: `${server.keepAliveTimeout}ms`,
+        headersTimeout: `${server.headersTimeout}ms`
+      });
+    }
   }
 
   /**
@@ -384,6 +505,61 @@ class RoIPServer {
         this.logger.debug('System metrics', { metrics });
       }, this.config.monitoring.stats_interval * 1000);
     }
+
+    // Event loop lag monitoring
+    if (this.config.performance?.eventLoopMonitoring?.enabled) {
+      const lagThreshold = this.config.performance.eventLoopMonitoring.lagThreshold || 100;
+      const checkInterval = this.config.performance.eventLoopMonitoring.checkInterval || 5000;
+
+      this.logger.info('✓ Event loop monitoring enabled', {
+        lagThreshold: `${lagThreshold}ms`,
+        checkInterval: `${checkInterval}ms`
+      });
+
+      setInterval(() => {
+        const start = Date.now();
+        setImmediate(() => {
+          const lag = Date.now() - start;
+          if (lag > lagThreshold) {
+            this.logger.warn('Event loop lag detected', {
+              lag: `${lag}ms`,
+              threshold: `${lagThreshold}ms`
+            });
+          }
+        });
+      }, checkInterval);
+    }
+
+    // Memory monitoring
+    if (this.config.performance?.memoryMonitoring?.enabled) {
+      const checkInterval = this.config.performance.memoryMonitoring.checkInterval || 60000;
+      const threshold = this.config.performance.memoryMonitoring.threshold || 0.9;
+
+      this.logger.info('✓ Memory monitoring enabled', {
+        threshold: `${(threshold * 100).toFixed(0)}%`,
+        checkInterval: `${checkInterval}ms`
+      });
+
+      setInterval(() => {
+        const stats = v8.getHeapStatistics();
+        const used = stats.used_heap_size / stats.heap_size_limit;
+
+        if (used > threshold) {
+          this.logger.error('High memory usage detected', {
+            usedHeapSize: `${(stats.used_heap_size / 1024 / 1024).toFixed(2)}MB`,
+            heapSizeLimit: `${(stats.heap_size_limit / 1024 / 1024).toFixed(2)}MB`,
+            percentUsed: `${(used * 100).toFixed(2)}%`,
+            threshold: `${(threshold * 100).toFixed(0)}%`
+          });
+
+          // Suggest garbage collection if usage is critically high
+          if (used > 0.95 && global.gc) {
+            this.logger.warn('Forcing garbage collection due to critical memory usage');
+            global.gc();
+          }
+        }
+      }, checkInterval);
+    }
   }
 
   /**
@@ -392,49 +568,190 @@ class RoIPServer {
   async stop() {
     if (!this.running) return;
 
-    this.logger.info('Stopping server...');
+    this.logger.info('Graceful shutdown initiated...');
     this.running = false;
 
-    // Stop all components
-    if (this.components.websocket) await this.components.websocket.stop();
-    if (this.components.apiServer) this.components.apiServer.close();
-    if (this.components.stun) await this.components.stun.stop();
-    if (this.components.sip) await this.components.sip.stop();
-    if (this.components.database) await this.components.database.close();
+    try {
+      // Stop accepting new connections
+      if (this.components.apiServer) {
+        await new Promise((resolve) => {
+          this.components.apiServer.close(() => {
+            this.logger.info('✓ API server closed');
+            resolve();
+          });
+        });
+      }
 
-    this.logger.info('✓ Server stopped');
+      // Stop HTTP redirect server if running
+      if (this.components.httpRedirectServer) {
+        await new Promise((resolve) => {
+          this.components.httpRedirectServer.close(() => {
+            this.logger.info('✓ HTTP redirect server closed');
+            resolve();
+          });
+        });
+      }
+
+      // Stop WebSocket connections
+      if (this.components.websocket) {
+        await this.components.websocket.stop();
+        this.logger.info('✓ WebSocket server stopped');
+      }
+
+      // End all active calls
+      if (this.components.call) {
+        const activeCalls = this.components.call.getActiveCalls();
+        if (activeCalls.length > 0) {
+          this.logger.info(`Terminating ${activeCalls.length} active calls...`);
+          for (const call of activeCalls) {
+            await this.components.call.endCall(call.id, 'server_shutdown').catch(err => {
+              this.logger.error(`Failed to end call ${call.id}: ${err.message}`);
+            });
+          }
+          this.logger.info('✓ All calls terminated');
+        }
+      }
+
+      // Stop STUN server
+      if (this.components.stun) {
+        await this.components.stun.stop();
+        this.logger.info('✓ STUN server stopped');
+      }
+
+      // Stop SIP server
+      if (this.components.sip) {
+        await this.components.sip.stop();
+        this.logger.info('✓ SIP server stopped');
+      }
+
+      // Close database connections
+      if (this.components.database) {
+        await this.components.database.close();
+        this.logger.info('✓ Database closed');
+      }
+
+      this.logger.info('✓ Graceful shutdown completed');
+    } catch (error) {
+      this.logger.error(`Error during shutdown: ${error.message}`, { stack: error.stack });
+      throw error;
+    }
   }
 }
 
 // Main entry point
 const main = async () => {
   const configPath = process.argv[2];
-  const server = new RoIPServer(configPath);
 
-  // Graceful shutdown
-  const shutdown = async (signal) => {
-    console.log(`\n${signal} received, shutting down gracefully...`);
-    await server.stop();
-    process.exit(0);
-  };
+  // Check if clustering is enabled
+  const tempConfig = loadConfigSync(configPath);
+  const clusterEnabled = tempConfig?.performance?.cluster?.enabled || false;
+  const numWorkers = tempConfig?.performance?.cluster?.workers || os.cpus().length;
 
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  // Cluster mode for multi-core performance
+  if (clusterEnabled && cluster.isPrimary) {
+    console.log('═══════════════════════════════════════════════════');
+    console.log('  ESP32 RoIP Server - Cluster Mode');
+    console.log(`  Starting ${numWorkers} workers on ${os.cpus().length} CPUs`);
+    console.log('═══════════════════════════════════════════════════\n');
 
-  // Unhandled errors
-  process.on('unhandledRejection', (reason, promise) => {
-    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-    process.exit(1);
-  });
+    // Fork workers
+    for (let i = 0; i < numWorkers; i++) {
+      const worker = cluster.fork();
+      console.log(`✓ Worker ${worker.process.pid} started`);
+    }
 
-  process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
-    process.exit(1);
-  });
+    // Handle worker lifecycle
+    cluster.on('exit', (worker, code, signal) => {
+      console.error(`Worker ${worker.process.pid} died (${signal || code}). Restarting...`);
+      const newWorker = cluster.fork();
+      console.log(`✓ New worker ${newWorker.process.pid} started`);
+    });
 
-  // Start server
-  await server.start();
+    cluster.on('online', (worker) => {
+      console.log(`Worker ${worker.process.pid} is online`);
+    });
+
+    // Graceful shutdown for cluster master
+    let isShuttingDown = false;
+    const shutdownCluster = async (signal) => {
+      if (isShuttingDown) return;
+      isShuttingDown = true;
+
+      console.log(`\n${signal} received, shutting down cluster...`);
+
+      for (const id in cluster.workers) {
+        cluster.workers[id].kill();
+      }
+
+      setTimeout(() => {
+        console.log('All workers stopped');
+        process.exit(0);
+      }, 5000);
+    };
+
+    process.on('SIGTERM', () => shutdownCluster('SIGTERM'));
+    process.on('SIGINT', () => shutdownCluster('SIGINT'));
+
+  } else {
+    // Worker process or standalone mode
+    const server = new RoIPServer(configPath);
+    let isShuttingDown = false;
+
+    // Graceful shutdown
+    const shutdown = async (signal) => {
+      if (isShuttingDown) return;
+      isShuttingDown = true;
+
+      console.log(`\n${signal} received, shutting down gracefully...`);
+
+      try {
+        await server.stop();
+        console.log('✓ Server shutdown complete');
+        process.exit(0);
+      } catch (error) {
+        console.error('Error during shutdown:', error);
+        process.exit(1);
+      }
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+
+    // Unhandled errors
+    process.on('unhandledRejection', (reason, promise) => {
+      console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+      if (server.logger) {
+        server.logger.error('Unhandled Rejection', { reason, promise });
+      }
+      process.exit(1);
+    });
+
+    process.on('uncaughtException', (error) => {
+      console.error('Uncaught Exception:', error);
+      if (server.logger) {
+        server.logger.error('Uncaught Exception', { error });
+      }
+      process.exit(1);
+    });
+
+    // Start server
+    await server.start();
+  }
 };
+
+/**
+ * Load configuration synchronously (for cluster mode detection)
+ */
+function loadConfigSync(configPath) {
+  try {
+    const defaultPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '../config/default.yaml');
+    const configFile = fs.readFileSync(configPath || defaultPath, 'utf8');
+    return YAML.parse(configFile);
+  } catch (error) {
+    console.error('Failed to load config:', error.message);
+    return {};
+  }
+}
 
 // Run if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {

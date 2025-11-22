@@ -35,6 +35,49 @@ export const CallDirection = {
 };
 
 /**
+ * Call Object Pool for memory optimization
+ */
+class CallPool {
+  constructor(maxSize = 100) {
+    this.pool = [];
+    this.maxSize = maxSize;
+    this.created = 0;
+    this.reused = 0;
+  }
+
+  acquire(callId, config, logger) {
+    let call;
+    if (this.pool.length > 0) {
+      call = this.pool.pop();
+      call.reset(callId, config, logger);
+      this.reused++;
+    } else {
+      call = new Call(callId, config, logger);
+      this.created++;
+    }
+    return call;
+  }
+
+  release(call) {
+    if (this.pool.length < this.maxSize) {
+      // Clear sensitive data before returning to pool
+      call.clearData();
+      this.pool.push(call);
+    }
+  }
+
+  getStats() {
+    return {
+      poolSize: this.pool.length,
+      maxSize: this.maxSize,
+      created: this.created,
+      reused: this.reused,
+      reuseRate: this.created > 0 ? ((this.reused / (this.created + this.reused)) * 100).toFixed(2) + '%' : '0%'
+    };
+  }
+}
+
+/**
  * Individual call representation
  */
 class Call {
@@ -85,6 +128,69 @@ class Call {
       latency: 0,
       audioQuality: 'excellent'
     };
+  }
+
+  /**
+   * Reset call object for reuse (object pooling)
+   */
+  reset(callId, config, logger) {
+    this.id = callId;
+    this.config = config;
+    this.logger = logger;
+
+    this.state = CallState.IDLE;
+    this.direction = null;
+    this.startTime = null;
+    this.endTime = null;
+    this.durationSeconds = 0;
+
+    this.initiator = null;
+    this.recipient = null;
+    this.participants.clear();
+
+    this.sipSessionId = null;
+    this.rtpSessions.clear();
+
+    this.isRecording = false;
+    this.recordingFilePath = null;
+    this.recordingStartTime = null;
+    this.recordingData = [];
+    this.isConference = false;
+    this.onHold = false;
+    this.transferTarget = null;
+
+    if (this.timeoutHandle) {
+      clearTimeout(this.timeoutHandle);
+      this.timeoutHandle = null;
+    }
+
+    this.dialTimeout = config.call.dial_timeout || 30000;
+    this.ringTimeout = config.call.ring_timeout || 60000;
+    this.idleTimeout = config.call.idle_timeout || 600000;
+
+    this.stats = {
+      packetsReceived: 0,
+      packetsSent: 0,
+      bytesReceived: 0,
+      bytesSent: 0,
+      packetsLost: 0,
+      jitter: 0,
+      latency: 0,
+      audioQuality: 'excellent'
+    };
+  }
+
+  /**
+   * Clear sensitive data before returning to pool
+   */
+  clearData() {
+    this.recordingData = [];
+    this.participants.clear();
+    this.rtpSessions.clear();
+    if (this.timeoutHandle) {
+      clearTimeout(this.timeoutHandle);
+      this.timeoutHandle = null;
+    }
   }
 
   /**
@@ -229,6 +335,9 @@ export class CallManager extends EventEmitter {
     this.extensionToCalls = new Map(); // extension -> Set<callId>
     this.sessionToCalls = new Map(); // SIP session ID -> callId
 
+    // Object pool for call objects
+    this.callPool = new CallPool(routingConfig.max_concurrent_calls || 100);
+
     // Configuration
     this.config = {
       call: {
@@ -280,11 +389,12 @@ export class CallManager extends EventEmitter {
   }
 
   /**
-   * Create a new call
+   * Create a new call using object pooling
    */
   createCall(initiatorExtension, recipientExtension, direction = CallDirection.OUTBOUND) {
     const callId = this.generateCallId();
-    const call = new Call(callId, this.config, this.logger);
+    // Use object pool to acquire call object
+    const call = this.callPool.acquire(callId, this.config, this.logger);
 
     call.direction = direction;
     call.initiator = initiatorExtension;
@@ -593,7 +703,7 @@ export class CallManager extends EventEmitter {
   }
 
   /**
-   * Start conference with multiple participants
+   * Start conference with multiple participants using object pooling
    */
   async startConference(initiatorExtension, participantExtensions) {
     try {
@@ -608,7 +718,8 @@ export class CallManager extends EventEmitter {
       }
 
       const conferenceId = this.generateCallId();
-      const conference = new Call(conferenceId, this.config, this.logger);
+      // Use object pool to acquire conference call object
+      const conference = this.callPool.acquire(conferenceId, this.config, this.logger);
 
       conference.direction = CallDirection.OUTBOUND;
       conference.initiator = initiatorExtension;
@@ -970,7 +1081,7 @@ export class CallManager extends EventEmitter {
   }
 
   /**
-   * Remove call from tracking
+   * Remove call from tracking and return to object pool
    */
   removeCall(callId) {
     const call = this.calls.get(callId);
@@ -990,7 +1101,10 @@ export class CallManager extends EventEmitter {
     // Remove from calls store
     this.calls.delete(callId);
 
-    this.logger.debug(`Call ${callId} removed from tracking`);
+    // Return call object to pool for reuse
+    this.callPool.release(call);
+
+    this.logger.debug(`Call ${callId} removed from tracking and returned to pool`);
   }
 
   /**
@@ -1170,6 +1284,9 @@ export class CallManager extends EventEmitter {
 
     const uptime = Date.now() - this.globalStats.startTime;
 
+    // Get object pool statistics
+    const poolStats = this.callPool.getStats();
+
     return {
       totalCalls: this.globalStats.totalCalls,
       activeCallsCount: this.globalStats.activeCallsCount,
@@ -1182,7 +1299,8 @@ export class CallManager extends EventEmitter {
         : 0,
       uptime,
       callsByExtension: this.globalStats.callsByExtension,
-      activeCalls: this.getActiveCalls()
+      activeCalls: this.getActiveCalls(),
+      objectPool: poolStats
     };
   }
 

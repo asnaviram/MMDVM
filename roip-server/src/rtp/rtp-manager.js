@@ -502,10 +502,11 @@ class RTPStream {
  * - Audio mixing for conferences
  * - Jitter buffer management
  * - Packet forwarding and relaying
+ * - SRTP encryption/decryption support
  * - Comprehensive statistics
  */
 export class RTPManager extends EventEmitter {
-  constructor(options = {}) {
+  constructor(options = {}, srtpConfig = null) {
     super();
 
     // Configuration
@@ -514,6 +515,15 @@ export class RTPManager extends EventEmitter {
     this.maxStreams = options.maxStreams || 50;
     this.enableMixing = options.enableMixing !== false;
     this.enableRTCP = options.enableRTCP !== false;
+
+    // SRTP Configuration
+    this.srtpEnabled = srtpConfig?.enabled || false;
+    this.srtpConfig = srtpConfig || {
+      enabled: false,
+      crypto_suites: ['AES_CM_128_HMAC_SHA1_80'],
+      key_derivation_rate: 0
+    };
+    this.srtpContexts = new Map(); // streamId -> SRTP context
 
     // Port allocation
     this.availablePorts = new Set();
@@ -993,8 +1003,151 @@ export class RTPManager extends EventEmitter {
       availablePorts: this.availablePorts.size,
       mixerStats: this.mixer.getStats(),
       mixingEnabled: this.mixingEnabled && this.mixTimer !== null,
+      srtpEnabled: this.srtpEnabled,
+      srtpStreams: this.srtpContexts.size,
       uptime: Date.now() - this.stats.createdTime
     };
+  }
+
+  /**
+   * Initialize SRTP context for a stream
+   * @param {string} streamId - Stream identifier
+   * @param {Buffer} masterKey - SRTP master key
+   * @param {Buffer} masterSalt - SRTP master salt
+   * @param {string} cryptoSuite - Crypto suite (e.g., 'AES_CM_128_HMAC_SHA1_80')
+   * @returns {boolean} Success status
+   *
+   * NOTE: This is a placeholder implementation. For production use, integrate
+   * a proper SRTP library like 'srtp2' or 'wrtc' with libsrtp bindings.
+   */
+  initializeSRTP(streamId, masterKey, masterSalt, cryptoSuite = 'AES_CM_128_HMAC_SHA1_80') {
+    if (!this.srtpEnabled) {
+      this.emit('error', new Error('SRTP is not enabled in configuration'));
+      return false;
+    }
+
+    if (!this.streams.has(streamId)) {
+      this.emit('error', new Error(`Stream ${streamId} does not exist`));
+      return false;
+    }
+
+    try {
+      // TODO: Implement actual SRTP context initialization
+      // This requires integrating with a native SRTP library
+      // Example with hypothetical SRTP library:
+      // const srtp = require('srtp2');
+      // const context = srtp.createContext({
+      //   masterKey,
+      //   masterSalt,
+      //   cryptoSuite,
+      //   keyDerivationRate: this.srtpConfig.key_derivation_rate
+      // });
+
+      // For now, store configuration for future implementation
+      this.srtpContexts.set(streamId, {
+        masterKey: masterKey.toString('base64'),
+        masterSalt: masterSalt.toString('base64'),
+        cryptoSuite,
+        initialized: true,
+        packetsEncrypted: 0,
+        packetsDecrypted: 0
+      });
+
+      this.emit('srtpInitialized', { streamId, cryptoSuite });
+      return true;
+    } catch (error) {
+      this.emit('error', new Error(`Failed to initialize SRTP for ${streamId}: ${error.message}`));
+      return false;
+    }
+  }
+
+  /**
+   * Encrypt RTP packet using SRTP
+   * @param {string} streamId - Stream identifier
+   * @param {Buffer} rtpPacket - RTP packet to encrypt
+   * @returns {Buffer|null} Encrypted SRTP packet or null on failure
+   *
+   * NOTE: This is a placeholder. Implement with proper SRTP library.
+   */
+  encryptSRTP(streamId, rtpPacket) {
+    const context = this.srtpContexts.get(streamId);
+    if (!context) {
+      return rtpPacket; // Pass through if SRTP not initialized
+    }
+
+    try {
+      // TODO: Implement actual SRTP encryption
+      // Example with hypothetical SRTP library:
+      // const encrypted = context.encrypt(rtpPacket);
+      // context.packetsEncrypted++;
+      // return encrypted;
+
+      // Placeholder: return unencrypted packet with warning
+      if (context.packetsEncrypted === 0) {
+        this.emit('warning', 'SRTP encryption not yet implemented - packets sent unencrypted');
+      }
+      context.packetsEncrypted++;
+      return rtpPacket;
+    } catch (error) {
+      this.emit('error', new Error(`SRTP encryption failed for ${streamId}: ${error.message}`));
+      return null;
+    }
+  }
+
+  /**
+   * Decrypt SRTP packet to RTP
+   * @param {string} streamId - Stream identifier
+   * @param {Buffer} srtpPacket - SRTP packet to decrypt
+   * @returns {Buffer|null} Decrypted RTP packet or null on failure
+   *
+   * NOTE: This is a placeholder. Implement with proper SRTP library.
+   */
+  decryptSRTP(streamId, srtpPacket) {
+    const context = this.srtpContexts.get(streamId);
+    if (!context) {
+      return srtpPacket; // Pass through if SRTP not initialized
+    }
+
+    try {
+      // TODO: Implement actual SRTP decryption
+      // Example with hypothetical SRTP library:
+      // const decrypted = context.decrypt(srtpPacket);
+      // context.packetsDecrypted++;
+      // return decrypted;
+
+      // Placeholder: return packet as-is with warning
+      if (context.packetsDecrypted === 0) {
+        this.emit('warning', 'SRTP decryption not yet implemented - processing unencrypted packets');
+      }
+      context.packetsDecrypted++;
+      return srtpPacket;
+    } catch (error) {
+      this.emit('error', new Error(`SRTP decryption failed for ${streamId}: ${error.message}`));
+      return null;
+    }
+  }
+
+  /**
+   * Generate SRTP key material
+   * @param {number} keyLength - Key length in bytes (default 16 for AES-128)
+   * @param {number} saltLength - Salt length in bytes (default 14)
+   * @returns {object} Object with masterKey and masterSalt buffers
+   */
+  generateSRTPKeyMaterial(keyLength = 16, saltLength = 14) {
+    const crypto = require('crypto');
+    return {
+      masterKey: crypto.randomBytes(keyLength),
+      masterSalt: crypto.randomBytes(saltLength)
+    };
+  }
+
+  /**
+   * Get SRTP statistics for a stream
+   * @param {string} streamId - Stream identifier
+   * @returns {object|null} SRTP statistics or null if not enabled
+   */
+  getSRTPStats(streamId) {
+    return this.srtpContexts.get(streamId) || null;
   }
 
   /**

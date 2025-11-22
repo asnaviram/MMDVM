@@ -9,6 +9,7 @@ import pg from 'pg';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import LRUCache from 'lru-cache';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,17 +34,61 @@ export class DatabaseModule {
         port: config.postgresql?.port || 5432,
         database: config.postgresql?.database || 'roip_server',
         user: config.postgresql?.user || 'roip_user',
-        password: config.postgresql?.password || 'roip_password',
+        password: config.postgresql?.password || process.env.DB_PASSWORD,
+        // Enhanced connection pooling
         max: config.postgresql?.max || 20,
+        min: config.postgresql?.min || 2,
         idleTimeoutMillis: config.postgresql?.idleTimeoutMillis || 30000,
-        connectionTimeoutMillis: config.postgresql?.connectionTimeoutMillis || 2000,
+        connectionTimeoutMillis: config.postgresql?.connectionTimeoutMillis || 5000,
+        statement_timeout: config.postgresql?.statement_timeout || 10000,
+        query_timeout: config.postgresql?.query_timeout || 10000,
+        keepAlive: config.postgresql?.keepAlive !== false,
+        keepAliveInitialDelayMillis: config.postgresql?.keepAliveInitialDelayMillis || 10000,
         ...config.postgresql,
       },
+      // Read replicas for PostgreSQL
+      readReplicas: config.readReplicas || [],
     };
 
     this.db = null;
     this.pgPool = null;
+    this.readPools = [];
+    this.currentReadPoolIndex = 0;
     this.isInitialized = false;
+
+    // Performance optimizations
+    this.preparedStatements = new Map();
+    this.queryCache = new LRUCache({
+      max: config.cacheSize || 500,
+      maxAge: config.cacheTTL || 1000 * 60 * 5, // 5 minutes default
+    });
+
+    // Performance metrics
+    this.metrics = {
+      queryCount: 0,
+      totalQueryTime: 0,
+      slowQueryCount: 0,
+      cacheHits: 0,
+      cacheMisses: 0,
+      slowQueryThreshold: config.slowQueryThreshold || 1000, // 1 second
+    };
+
+    // Maintenance interval
+    this.maintenanceInterval = null;
+
+    // SECURITY: Validate PostgreSQL password if PostgreSQL is configured
+    if (this.config.type === 'postgresql') {
+      if (!this.config.postgresql.password ||
+          this.config.postgresql.password === 'roip_password' ||
+          this.config.postgresql.password === 'CHANGE-THIS-PASSWORD-IMMEDIATELY' ||
+          this.config.postgresql.password.length < 16) {
+        throw new Error(
+          'SECURITY ERROR: PostgreSQL password must be set to a secure value (minimum 16 characters). ' +
+          'Set the DB_PASSWORD environment variable or pass it in the configuration. ' +
+          'Generate one with: openssl rand -base64 24'
+        );
+      }
+    }
   }
 
   /**
@@ -65,6 +110,10 @@ export class DatabaseModule {
 
       await this.createSchema();
       await this.runMigrations();
+
+      // Start maintenance tasks (daily)
+      this.startMaintenance();
+
       this.isInitialized = true;
       return this.db || this.pgPool;
     } catch (error) {
@@ -82,10 +131,15 @@ export class DatabaseModule {
     // Enable foreign keys
     this.db.pragma('foreign_keys = ON');
 
-    // Set journal mode to WAL for better concurrency
+    // Performance optimizations
     this.db.pragma('journal_mode = WAL');
+    this.db.pragma('synchronous = NORMAL');
+    this.db.pragma('cache_size = 10000'); // ~40MB cache
+    this.db.pragma('temp_store = MEMORY');
+    this.db.pragma('mmap_size = 30000000000'); // 30GB memory map
+    this.db.pragma('page_size = 4096');
 
-    console.log(`SQLite database initialized: ${dbPath}`);
+    console.log(`SQLite database initialized with optimizations: ${dbPath}`);
   }
 
   /**
@@ -97,6 +151,18 @@ export class DatabaseModule {
     this.pgPool.on('error', (err) => {
       console.error('Unexpected error on idle client', err);
     });
+
+    // Initialize read replicas if configured
+    if (this.config.readReplicas && this.config.readReplicas.length > 0) {
+      for (const replicaConfig of this.config.readReplicas) {
+        const replicaPool = new pg.Pool(replicaConfig);
+        replicaPool.on('error', (err) => {
+          console.error('Unexpected error on read replica', err);
+        });
+        this.readPools.push(replicaPool);
+      }
+      console.log(`PostgreSQL connection pool initialized with ${this.readPools.length} read replicas`);
+    }
 
     // Test connection
     const client = await this.pgPool.connect();
@@ -211,19 +277,37 @@ export class DatabaseModule {
       );
     `);
 
-    // Create indexes
+    // Create indexes (basic and composite)
     this.db.exec(`
+      -- User indexes
       CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
       CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+      CREATE INDEX IF NOT EXISTS idx_users_role_active ON users(role, is_active);
+
+      -- Device indexes
       CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);
       CREATE INDEX IF NOT EXISTS idx_devices_hardware_id ON devices(hardware_id);
+      CREATE INDEX IF NOT EXISTS idx_devices_active ON devices(is_active, last_seen DESC);
+      CREATE INDEX IF NOT EXISTS idx_devices_user_active ON devices(user_id, is_active);
+
+      -- Route indexes
       CREATE INDEX IF NOT EXISTS idx_routes_source ON routes(source_device_id);
       CREATE INDEX IF NOT EXISTS idx_routes_destination ON routes(destination_device_id);
+      CREATE INDEX IF NOT EXISTS idx_routes_active ON routes(is_active, priority DESC);
+      CREATE INDEX IF NOT EXISTS idx_routes_source_dest ON routes(source_device_id, destination_device_id);
+
+      -- Call log indexes
       CREATE INDEX IF NOT EXISTS idx_call_logs_route_id ON call_logs(route_id);
       CREATE INDEX IF NOT EXISTS idx_call_logs_source_user ON call_logs(source_user_id);
       CREATE INDEX IF NOT EXISTS idx_call_logs_destination_user ON call_logs(destination_user_id);
-      CREATE INDEX IF NOT EXISTS idx_call_logs_start_time ON call_logs(start_time);
+      CREATE INDEX IF NOT EXISTS idx_call_logs_start_time ON call_logs(start_time DESC);
+      CREATE INDEX IF NOT EXISTS idx_call_logs_status ON call_logs(call_status, start_time DESC);
+      CREATE INDEX IF NOT EXISTS idx_call_logs_route_time ON call_logs(route_id, start_time DESC);
+      CREATE INDEX IF NOT EXISTS idx_call_logs_user_time ON call_logs(source_user_id, start_time DESC);
+
+      -- Recording indexes
       CREATE INDEX IF NOT EXISTS idx_recordings_call_log_id ON recordings(call_log_id);
+      CREATE INDEX IF NOT EXISTS idx_recordings_created ON recordings(created_at DESC);
     `);
   }
 
@@ -329,18 +413,36 @@ export class DatabaseModule {
         );
       `);
 
-      // Create indexes
+      // Create indexes (basic and composite)
+      // User indexes
       await client.query('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);');
       await client.query('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_users_role_active ON users(role, is_active);');
+
+      // Device indexes
       await client.query('CREATE INDEX IF NOT EXISTS idx_devices_user_id ON devices(user_id);');
       await client.query('CREATE INDEX IF NOT EXISTS idx_devices_hardware_id ON devices(hardware_id);');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_devices_active ON devices(is_active, last_seen DESC);');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_devices_user_active ON devices(user_id, is_active);');
+
+      // Route indexes
       await client.query('CREATE INDEX IF NOT EXISTS idx_routes_source ON routes(source_device_id);');
       await client.query('CREATE INDEX IF NOT EXISTS idx_routes_destination ON routes(destination_device_id);');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_routes_active ON routes(is_active, priority DESC);');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_routes_source_dest ON routes(source_device_id, destination_device_id);');
+
+      // Call log indexes
       await client.query('CREATE INDEX IF NOT EXISTS idx_call_logs_route_id ON call_logs(route_id);');
       await client.query('CREATE INDEX IF NOT EXISTS idx_call_logs_source_user ON call_logs(source_user_id);');
       await client.query('CREATE INDEX IF NOT EXISTS idx_call_logs_destination_user ON call_logs(destination_user_id);');
-      await client.query('CREATE INDEX IF NOT EXISTS idx_call_logs_start_time ON call_logs(start_time);');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_call_logs_start_time ON call_logs(start_time DESC);');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_call_logs_status ON call_logs(call_status, start_time DESC);');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_call_logs_route_time ON call_logs(route_id, start_time DESC);');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_call_logs_user_time ON call_logs(source_user_id, start_time DESC);');
+
+      // Recording indexes
       await client.query('CREATE INDEX IF NOT EXISTS idx_recordings_call_log_id ON recordings(call_log_id);');
+      await client.query('CREATE INDEX IF NOT EXISTS idx_recordings_created ON recordings(created_at DESC);');
 
       client.release();
     } catch (error) {
@@ -1327,15 +1429,304 @@ export class DatabaseModule {
   }
 
   /**
+   * Performance Optimization Methods
+   */
+
+  /**
+   * Get or create prepared statement (SQLite only)
+   */
+  getPreparedStatement(sql) {
+    if (this.config.type !== 'sqlite') {
+      throw new Error('Prepared statements are only for SQLite');
+    }
+
+    if (!this.preparedStatements.has(sql)) {
+      this.preparedStatements.set(sql, this.db.prepare(sql));
+    }
+    return this.preparedStatements.get(sql);
+  }
+
+  /**
+   * Execute query with caching
+   */
+  async getCached(key, queryFn, ttl = null) {
+    const cached = this.queryCache.get(key);
+    if (cached) {
+      this.metrics.cacheHits++;
+      return cached;
+    }
+
+    this.metrics.cacheMisses++;
+    const result = await queryFn();
+    this.queryCache.set(key, result, ttl || undefined);
+    return result;
+  }
+
+  /**
+   * Execute query with performance monitoring
+   */
+  async monitoredQuery(sql, params = []) {
+    const start = Date.now();
+    let result;
+
+    try {
+      if (this.config.type === 'sqlite') {
+        const stmt = this.db.prepare(sql);
+        result = params.length > 0 ? stmt.all(...params) : stmt.all();
+      } else {
+        const queryResult = await this.pgPool.query(sql, params);
+        result = queryResult.rows;
+      }
+    } catch (error) {
+      throw error;
+    } finally {
+      const duration = Date.now() - start;
+      this.metrics.queryCount++;
+      this.metrics.totalQueryTime += duration;
+
+      if (duration > this.metrics.slowQueryThreshold) {
+        this.metrics.slowQueryCount++;
+        console.warn(`Slow query detected (${duration}ms):`, sql.substring(0, 100));
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Execute read query (uses read replica if available for PostgreSQL)
+   */
+  async readQuery(sql, params = []) {
+    if (this.config.type === 'postgresql' && this.readPools.length > 0) {
+      const pool = this.readPools[this.currentReadPoolIndex];
+      this.currentReadPoolIndex = (this.currentReadPoolIndex + 1) % this.readPools.length;
+      const result = await pool.query(sql, params);
+      return result.rows;
+    }
+
+    return this.monitoredQuery(sql, params);
+  }
+
+  /**
+   * Bulk insert call logs
+   */
+  async bulkInsertCallLogs(callLogs) {
+    if (callLogs.length === 0) return [];
+
+    try {
+      if (this.config.type === 'postgresql') {
+        const values = callLogs.map((_, i) =>
+          `($${i*7+1}, $${i*7+2}, $${i*7+3}, $${i*7+4}, $${i*7+5}, $${i*7+6}, $${i*7+7})`
+        ).join(',');
+        const params = callLogs.flatMap(c => [
+          c.route_id,
+          c.source_user_id || null,
+          c.destination_user_id || null,
+          c.call_type || null,
+          c.call_status || 'initiated',
+          c.codec || null,
+          c.audio_quality || null,
+        ]);
+        const result = await this.pgPool.query(
+          `INSERT INTO call_logs (route_id, source_user_id, destination_user_id, call_type, call_status, codec, audio_quality)
+           VALUES ${values} RETURNING *`,
+          params
+        );
+        return result.rows;
+      } else {
+        const insert = this.getPreparedStatement(
+          'INSERT INTO call_logs (route_id, source_user_id, destination_user_id, call_type, call_status, codec, audio_quality) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        );
+        const insertMany = this.db.transaction((logs) => {
+          const results = [];
+          for (const log of logs) {
+            const info = insert.run(
+              log.route_id,
+              log.source_user_id || null,
+              log.destination_user_id || null,
+              log.call_type || null,
+              log.call_status || 'initiated',
+              log.codec || null,
+              log.audio_quality || null
+            );
+            results.push({ id: info.lastInsertRowid, ...log });
+          }
+          return results;
+        });
+        return insertMany(callLogs);
+      }
+    } catch (error) {
+      throw new Error(`Failed to bulk insert call logs: ${error.message}`);
+    }
+  }
+
+  /**
+   * Bulk insert devices
+   */
+  async bulkInsertDevices(devices) {
+    if (devices.length === 0) return [];
+
+    try {
+      if (this.config.type === 'postgresql') {
+        const values = devices.map((_, i) =>
+          `($${i*8+1}, $${i*8+2}, $${i*8+3}, $${i*8+4}, $${i*8+5}, $${i*8+6}, $${i*8+7}, $${i*8+8})`
+        ).join(',');
+        const params = devices.flatMap(d => [
+          d.user_id,
+          d.device_name,
+          d.device_type,
+          d.hardware_id || null,
+          d.ip_address || null,
+          d.port || null,
+          d.firmware_version || null,
+          d.is_active !== false,
+        ]);
+        const result = await this.pgPool.query(
+          `INSERT INTO devices (user_id, device_name, device_type, hardware_id, ip_address, port, firmware_version, is_active)
+           VALUES ${values} RETURNING *`,
+          params
+        );
+        return result.rows;
+      } else {
+        const insert = this.getPreparedStatement(
+          'INSERT INTO devices (user_id, device_name, device_type, hardware_id, ip_address, port, firmware_version, is_active) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+        );
+        const insertMany = this.db.transaction((devs) => {
+          const results = [];
+          for (const dev of devs) {
+            const info = insert.run(
+              dev.user_id,
+              dev.device_name,
+              dev.device_type,
+              dev.hardware_id || null,
+              dev.ip_address || null,
+              dev.port || null,
+              dev.firmware_version || null,
+              dev.is_active !== false ? 1 : 0
+            );
+            results.push({ id: info.lastInsertRowid, ...dev });
+          }
+          return results;
+        });
+        return insertMany(devices);
+      }
+    } catch (error) {
+      throw new Error(`Failed to bulk insert devices: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get performance metrics
+   */
+  getMetrics() {
+    return {
+      queryCount: this.metrics.queryCount,
+      avgQueryTime: this.metrics.queryCount > 0
+        ? Math.round(this.metrics.totalQueryTime / this.metrics.queryCount)
+        : 0,
+      totalQueryTime: this.metrics.totalQueryTime,
+      slowQueryCount: this.metrics.slowQueryCount,
+      slowQueryThreshold: this.metrics.slowQueryThreshold,
+      cacheHits: this.metrics.cacheHits,
+      cacheMisses: this.metrics.cacheMisses,
+      cacheHitRate: (this.metrics.cacheHits + this.metrics.cacheMisses) > 0
+        ? (this.metrics.cacheHits / (this.metrics.cacheHits + this.metrics.cacheMisses) * 100).toFixed(2) + '%'
+        : '0%',
+      cacheSize: this.queryCache.size,
+      poolInfo: this.config.type === 'postgresql' ? {
+        totalCount: this.pgPool?.totalCount || 0,
+        idleCount: this.pgPool?.idleCount || 0,
+        waitingCount: this.pgPool?.waitingCount || 0,
+        readReplicas: this.readPools.length,
+      } : null,
+    };
+  }
+
+  /**
+   * Reset performance metrics
+   */
+  resetMetrics() {
+    this.metrics.queryCount = 0;
+    this.metrics.totalQueryTime = 0;
+    this.metrics.slowQueryCount = 0;
+    this.metrics.cacheHits = 0;
+    this.metrics.cacheMisses = 0;
+  }
+
+  /**
+   * Clear query cache
+   */
+  clearCache() {
+    this.queryCache.reset();
+  }
+
+  /**
+   * Database maintenance (VACUUM and ANALYZE)
+   */
+  async maintenance() {
+    try {
+      if (this.config.type === 'postgresql') {
+        await this.pgPool.query('VACUUM ANALYZE');
+        console.log('PostgreSQL VACUUM ANALYZE completed');
+      } else {
+        this.db.prepare('VACUUM').run();
+        this.db.prepare('ANALYZE').run();
+        console.log('SQLite VACUUM and ANALYZE completed');
+      }
+    } catch (error) {
+      console.error('Database maintenance error:', error);
+    }
+  }
+
+  /**
+   * Start automatic maintenance (daily)
+   */
+  startMaintenance() {
+    if (this.maintenanceInterval) return;
+
+    // Run maintenance daily at 3 AM
+    const msPerDay = 1000 * 60 * 60 * 24;
+    this.maintenanceInterval = setInterval(() => {
+      this.maintenance();
+    }, msPerDay);
+
+    console.log('Database maintenance scheduled (daily)');
+  }
+
+  /**
+   * Stop automatic maintenance
+   */
+  stopMaintenance() {
+    if (this.maintenanceInterval) {
+      clearInterval(this.maintenanceInterval);
+      this.maintenanceInterval = null;
+      console.log('Database maintenance stopped');
+    }
+  }
+
+  /**
    * Cleanup and shutdown
    */
 
   async closeConnection() {
     try {
+      // Stop maintenance
+      this.stopMaintenance();
+
+      // Clear caches
+      this.queryCache.reset();
+      this.preparedStatements.clear();
+
       if (this.config.type === 'sqlite' && this.db) {
         this.db.close();
         console.log('SQLite connection closed');
       } else if (this.config.type === 'postgresql' && this.pgPool) {
+        // Close read replicas
+        for (const pool of this.readPools) {
+          await pool.end();
+        }
+        this.readPools = [];
+
         await this.pgPool.end();
         console.log('PostgreSQL connection pool closed');
       }

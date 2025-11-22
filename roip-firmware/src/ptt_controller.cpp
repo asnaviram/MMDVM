@@ -39,7 +39,7 @@ CPTTController::CPTTController() :
 m_pttPin(255),
 m_cosPin(255),
 m_voxPin(255),
-m_mode(PTT_MODE::DISABLED),
+m_mode(PTT_MODE::PTT_DISABLED),
 m_priority(TX_PRIORITY::COS_PRIORITY),
 m_currentState(PTT_STATE::IDLE),
 m_previousState(PTT_STATE::IDLE),
@@ -267,7 +267,7 @@ uint16_t CPTTController::getAudioPeakLevel() const
 
 void CPTTController::clock(uint8_t lengthMs)
 {
-  if (m_mode == PTT_MODE::DISABLED) {
+  if (m_mode == PTT_MODE::PTT_DISABLED) {
     return;
   }
 

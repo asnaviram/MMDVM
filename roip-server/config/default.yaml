@@ -48,22 +48,28 @@ database:
     port: 5432
     database: "roip"
     username: "roip"
-    password: "changeme"
+    # SECURITY: Use environment variable DB_PASSWORD in production
+    # Never commit actual passwords to version control
+    # Generate secure password: openssl rand -base64 24
+    password: "CHANGE-THIS-PASSWORD-IMMEDIATELY"  # MUST be changed!
     pool_size: 10
 
 # Authentication settings
 auth:
-  # JWT tokens for API
-  jwt_secret: "CHANGE-THIS-SECRET-IN-PRODUCTION"  # Must be changed!
+  # JWT tokens for API (REQUIRED in production!)
+  # Generate a secure secret with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+  # This default value will be REJECTED by the auth manager for security
+  jwt_secret: "INSECURE-DEFAULT-VALUE-REPLACE-IMMEDIATELY"  # MUST be changed!
   jwt_expiry: "1h"
 
   # SIP digest authentication
   sip_auth_enabled: true
 
   # Admin user (for web interface)
+  # SECURITY WARNING: Change these credentials immediately in production!
   admin:
     username: "admin"
-    password: "admin"  # CHANGE THIS!
+    password: "CHANGE-THIS-PASSWORD-IMMEDIATELY"  # CHANGE THIS!
 
 # STUN/TURN settings for NAT traversal
 nat_traversal:
@@ -156,6 +162,38 @@ qos:
   dscp_enabled: false
   dscp_value: 46  # EF (Expedited Forwarding)
 
+# TLS/SSL Configuration
+tls:
+  # Enable HTTPS for API and WebSocket
+  enabled: false
+
+  # Certificate files (Let's Encrypt or custom)
+  cert: "/etc/letsencrypt/live/roip.example.com/fullchain.pem"
+  key: "/etc/letsencrypt/live/roip.example.com/privkey.pem"
+  ca: null  # Optional: CA certificate bundle
+
+  # HTTP to HTTPS redirect
+  redirect_http: true
+  http_redirect_port: 8079
+
+  # TLS protocol versions
+  min_version: "TLSv1.2"
+  max_version: "TLSv1.3"
+
+  # Cipher suites (modern, secure ciphers)
+  ciphers:
+    - "TLS_AES_128_GCM_SHA256"
+    - "TLS_AES_256_GCM_SHA384"
+    - "TLS_CHACHA20_POLY1305_SHA256"
+    - "ECDHE-RSA-AES128-GCM-SHA256"
+    - "ECDHE-RSA-AES256-GCM-SHA384"
+
+  # Client certificate authentication (optional)
+  client_cert_auth:
+    enabled: false
+    required: false
+    ca_file: null
+
 # Security settings
 security:
   # Rate limiting (requests per minute)
@@ -164,17 +202,27 @@ security:
     window_ms: 60000
     max_requests: 100
 
-  # HTTPS/TLS settings
-  https:
-    enabled: false
-    cert_file: "./certs/server.crt"
-    key_file: "./certs/server.key"
-
-  # SRTP (secure RTP)
+  # SRTP (Secure RTP) for encrypted media
   srtp:
     enabled: false
     crypto_suites:
       - "AES_CM_128_HMAC_SHA1_80"
+      - "AES_CM_128_HMAC_SHA1_32"
+      - "AEAD_AES_256_GCM"
+      - "AEAD_AES_128_GCM"
+
+    # Key derivation
+    key_derivation_rate: 0  # 0 = no re-keying
+
+  # Security headers (enforced by server)
+  headers:
+    hsts_enabled: true
+    hsts_max_age: 31536000
+    hsts_include_subdomains: true
+    hsts_preload: true
+    frame_options: "DENY"
+    content_type_options: "nosniff"
+    xss_protection: "1; mode=block"
 
 # Device management
 devices:

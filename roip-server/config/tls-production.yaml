@@ -1,0 +1,208 @@
+# ESP32 RoIP Server Configuration - TLS Production Example
+#
+# This is an example configuration for production deployment with TLS/HTTPS enabled
+# Copy this file and modify for your environment:
+#   cp tls-production.yaml production.yaml
+#   nano production.yaml
+#
+
+server:
+  name: "ESP32 RoIP Server"
+  version: "1.0.0"
+  host: "0.0.0.0"
+
+  sip:
+    port: 5060
+    transport: "udp"
+    realm: "roip.example.com"
+    user_agent: "ESP32-RoIP-Server/1.0"
+
+  rtp:
+    port_min: 10000
+    port_max: 10100
+    payload_type: 96
+
+  # API with HTTPS enabled
+  api:
+    port: 8080  # HTTPS port (or 443 with nginx)
+    enable_cors: true
+    cors_origins: "https://roip.example.com,https://dashboard.example.com"
+
+  websocket:
+    port: 8081  # WSS port
+    ping_interval: 30000
+
+# TLS/SSL Configuration for Production
+tls:
+  # ENABLE HTTPS
+  enabled: true
+
+  # Let's Encrypt certificate paths
+  # Replace 'roip.example.com' with your actual domain
+  cert: "/etc/letsencrypt/live/roip.example.com/fullchain.pem"
+  key: "/etc/letsencrypt/live/roip.example.com/privkey.pem"
+  ca: null
+
+  # Redirect HTTP to HTTPS
+  redirect_http: true
+  http_redirect_port: 8079
+
+  # TLS protocol versions (secure configuration)
+  min_version: "TLSv1.2"
+  max_version: "TLSv1.3"
+
+  # Modern cipher suites (Mozilla Intermediate profile)
+  ciphers:
+    - "TLS_AES_128_GCM_SHA256"
+    - "TLS_AES_256_GCM_SHA384"
+    - "TLS_CHACHA20_POLY1305_SHA256"
+    - "ECDHE-RSA-AES128-GCM-SHA256"
+    - "ECDHE-RSA-AES256-GCM-SHA384"
+
+  # Optional: Client certificate authentication
+  client_cert_auth:
+    enabled: false
+    required: false
+    ca_file: null
+
+# Database configuration
+database:
+  type: "postgresql"
+
+  postgresql:
+    enabled: true
+    host: "localhost"
+    port: 5432
+    database: "roip"
+    username: "roip"
+    password: "${DB_PASSWORD}"  # Use environment variable
+    pool_size: 20
+
+# Authentication
+auth:
+  jwt_secret: "${JWT_SECRET}"  # Use environment variable - CRITICAL!
+  jwt_expiry: "1h"
+  sip_auth_enabled: true
+
+  admin:
+    username: "${ADMIN_USERNAME}"
+    password: "${ADMIN_PASSWORD}"  # Use environment variable
+
+# NAT Traversal
+nat_traversal:
+  stun:
+    enabled: true
+    servers:
+      - "stun:stun.l.google.com:19302"
+      - "stun:stun1.l.google.com:19302"
+
+  turn:
+    enabled: true
+    host: "turn.example.com"
+    port: 3478
+    realm: "roip.example.com"
+    secret: "${TURN_SECRET}"  # Use environment variable
+
+# Audio/Codec settings
+audio:
+  codecs:
+    - name: "opus"
+      payload_type: 96
+      sample_rate: 24000
+      channels: 1
+      bitrate: 32000
+
+    - name: "pcmu"
+      payload_type: 0
+      sample_rate: 8000
+      channels: 1
+
+  jitter_buffer:
+    min_delay_ms: 20
+    max_delay_ms: 200
+    target_delay_ms: 50
+
+# Call routing
+routing:
+  max_concurrent_calls: 100
+  call_timeout: 3600
+  enable_mixing: true
+  max_conference_size: 10
+
+# Recording
+recording:
+  enabled: true
+  path: "/var/lib/roip/recordings"
+  format: "opus"
+  retention_days: 90
+
+# Logging
+logging:
+  level: "info"
+
+  console:
+    enabled: true
+    colorize: false  # Disable for production logs
+
+  file:
+    enabled: true
+    path: "/var/log/roip"
+    filename: "roip-server.log"
+    max_size: "50m"
+    max_files: 10
+
+  sip_messages: false
+  rtp_packets: false
+
+# QoS
+qos:
+  dscp_enabled: true
+  dscp_value: 46
+
+# Security settings
+security:
+  # Rate limiting
+  rate_limit:
+    enabled: true
+    window_ms: 60000
+    max_requests: 100
+
+  # SRTP (Secure RTP) for encrypted media
+  srtp:
+    enabled: false  # Enable when SRTP library is integrated
+    crypto_suites:
+      - "AES_CM_128_HMAC_SHA1_80"
+      - "AES_CM_128_HMAC_SHA1_32"
+      - "AEAD_AES_256_GCM"
+      - "AEAD_AES_128_GCM"
+    key_derivation_rate: 0
+
+  # Security headers
+  headers:
+    hsts_enabled: true
+    hsts_max_age: 63072000  # 2 years
+    hsts_include_subdomains: true
+    hsts_preload: true
+    frame_options: "DENY"
+    content_type_options: "nosniff"
+    xss_protection: "1; mode=block"
+
+# Device management
+devices:
+  auto_registration: true
+  registration_expiry: 3600
+  max_devices_per_user: 10
+
+# Monitoring and health
+monitoring:
+  metrics_enabled: true
+  metrics_port: 9090
+  health_check_enabled: true
+  stats_interval: 60
+
+# Features
+features:
+  dtmf_relay: true
+  vad: true
+  cng: true
+  fec: true

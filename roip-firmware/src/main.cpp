@@ -77,7 +77,7 @@ class DSPProcessor* g_dsp_processor = nullptr;
 class OpusCodec* g_opus_codec = nullptr;
 class RTPHandler* g_rtp_handler = nullptr;
 class SIPClient* g_sip_client = nullptr;
-class PTTController* g_ptt_controller = nullptr;
+class CPTTController* g_ptt_controller = nullptr;
 class WebServer* g_web_server = nullptr;
 
 // LED status pins
@@ -251,7 +251,20 @@ void setup() {
     // Step 4: Initialize network manager
     LOG_INFO("Step 4: Initializing network manager...");
     g_network_manager = new NetworkManager();
-    if (!g_network_manager || !g_network_manager->begin()) {
+
+    // Create NetworkConfig from RoIPConfig
+    RoIPConfig& roipConfig = g_config_manager->getConfig();
+    NetworkConfig netConfig = {};
+    strncpy(netConfig.ssid, roipConfig.wifi_ssid, sizeof(netConfig.ssid) - 1);
+    strncpy(netConfig.password, roipConfig.wifi_password, sizeof(netConfig.password) - 1);
+    strncpy(netConfig.hostname, roipConfig.wifi_hostname, sizeof(netConfig.hostname) - 1);
+    netConfig.preferred_band = roipConfig.wifi_5ghz_enabled ? WiFiBand::BAND_5GHZ : WiFiBand::BAND_2_4GHZ;
+    netConfig.connect_timeout_ms = 15000;  // 15 seconds timeout
+    netConfig.ipv6_enabled = false;
+    // Leave static IP fields empty for DHCP
+    memset(netConfig.static_ip, 0, sizeof(netConfig.static_ip));
+
+    if (!g_network_manager || !g_network_manager->begin(netConfig)) {
         LOG_ERROR("NetworkManager initialization failed!");
         handleError(4, "NetworkManager initialization failed");
         return;
@@ -260,7 +273,7 @@ void setup() {
     // Step 5: Initialize audio pipeline
     LOG_INFO("Step 5: Initializing audio pipeline...");
     g_audio_pipeline = new AudioPipeline();
-    if (!g_audio_pipeline || !g_audio_pipeline->begin()) {
+    if (!g_audio_pipeline || g_audio_pipeline->begin(PIN_RX_AUDIO, PIN_TX_AUDIO) != AUDIO_ERR_OK) {
         LOG_ERROR("AudioPipeline initialization failed!");
         handleError(5, "AudioPipeline initialization failed");
         return;
@@ -269,47 +282,83 @@ void setup() {
     // Step 6: Initialize DSP processor
     LOG_INFO("Step 6: Initializing DSP processor...");
     g_dsp_processor = new DSPProcessor();
-    if (!g_dsp_processor || !g_dsp_processor->begin()) {
-        LOG_ERROR("DSPProcessor initialization failed!");
-        handleError(6, "DSPProcessor initialization failed");
+    if (!g_dsp_processor) {
+        LOG_ERROR("DSPProcessor allocation failed!");
+        handleError(6, "DSPProcessor allocation failed");
         return;
     }
+    g_dsp_processor->initialize(roipConfig.sample_rate);
+    LOG_INFO("DSPProcessor initialized successfully");
 
     // Step 7: Initialize Opus codec
     LOG_INFO("Step 7: Initializing Opus codec...");
     g_opus_codec = new OpusCodec();
-    if (!g_opus_codec || !g_opus_codec->begin()) {
-        LOG_ERROR("OpusCodec initialization failed!");
-        handleError(7, "OpusCodec initialization failed");
+    if (!g_opus_codec) {
+        LOG_ERROR("OpusCodec allocation failed!");
+        handleError(7, "OpusCodec allocation failed");
         return;
     }
+    // Initialize both encoder and decoder
+    if (g_opus_codec->initEncoder(roipConfig.sample_rate, 1, roipConfig.opus_bitrate,
+                                   roipConfig.opus_complexity, OPUS_MODE_VOIP) != OPUS_OK) {
+        LOG_ERROR("OpusCodec encoder initialization failed!");
+        handleError(7, "OpusCodec encoder initialization failed");
+        return;
+    }
+    if (g_opus_codec->initDecoder(roipConfig.sample_rate, 1) != OPUS_OK) {
+        LOG_ERROR("OpusCodec decoder initialization failed!");
+        handleError(7, "OpusCodec decoder initialization failed");
+        return;
+    }
+    LOG_INFO("OpusCodec initialized successfully");
 
     // Step 8: Initialize RTP handler
     LOG_INFO("Step 8: Initializing RTP handler...");
-    g_rtp_handler = new RTPHandler();
-    if (!g_rtp_handler || !g_rtp_handler->begin()) {
-        LOG_ERROR("RTPHandler initialization failed!");
-        handleError(8, "RTPHandler initialization failed");
+    g_rtp_handler = new RTPHandler(RTP_PAYLOAD_TYPE, roipConfig.sample_rate);
+    if (!g_rtp_handler) {
+        LOG_ERROR("RTPHandler allocation failed!");
+        handleError(8, "RTPHandler allocation failed");
         return;
     }
+    // Generate device-specific CNAME for RTP
+    char cname[256];
+    snprintf(cname, sizeof(cname), "roip-%s", roipConfig.device_id);
+    g_rtp_handler->initialize(cname);
+    LOG_INFO("RTPHandler initialized successfully");
 
     // Step 9: Initialize SIP client
     LOG_INFO("Step 9: Initializing SIP client...");
     g_sip_client = new SIPClient();
-    if (!g_sip_client || !g_sip_client->begin()) {
+    if (!g_sip_client) {
+        LOG_ERROR("SIPClient allocation failed!");
+        handleError(9, "SIPClient allocation failed");
+        return;
+    }
+    // Initialize with local port for SIP signaling
+    if (!g_sip_client->initialize(SIP_PORT)) {
         LOG_ERROR("SIPClient initialization failed!");
         handleError(9, "SIPClient initialization failed");
         return;
     }
+    // Configure SIP registration
+    g_sip_client->setRegistration(roipConfig.sip_server, roipConfig.sip_username,
+                                   roipConfig.sip_password, roipConfig.device_name);
+    LOG_INFO("SIPClient initialized successfully");
 
     // Step 10: Initialize PTT controller
     LOG_INFO("Step 10: Initializing PTT controller...");
-    g_ptt_controller = new PTTController();
-    if (!g_ptt_controller || !g_ptt_controller->begin()) {
-        LOG_ERROR("PTTController initialization failed!");
-        handleError(10, "PTTController initialization failed");
+    g_ptt_controller = new CPTTController();
+    if (!g_ptt_controller) {
+        LOG_ERROR("PTTController allocation failed!");
+        handleError(10, "PTTController allocation failed");
         return;
     }
+    // Initialize PTT controller with GPIO pins
+    g_ptt_controller->initialize(PIN_PTT, PIN_COS, 0);  // 0 = no VOX pin for now
+    g_ptt_controller->setMode(roipConfig.vox_enabled ? PTT_MODE::VOX_MODE : PTT_MODE::COS_MODE);
+    g_ptt_controller->setCOSDebounceTime(roipConfig.cos_debounce_ms);
+    g_ptt_controller->setTailDelay(roipConfig.ptt_tail_ms);
+    LOG_INFO("PTTController initialized successfully");
 
     // Step 11: Initialize web server
     LOG_INFO("Step 11: Initializing web server...");

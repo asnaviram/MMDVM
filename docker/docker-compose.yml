@@ -11,7 +11,8 @@ services:
     environment:
       POSTGRES_DB: ${DB_NAME:-roip}
       POSTGRES_USER: ${DB_USER:-roip}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-roip_secure_password}
+      # SECURITY WARNING: Change DB_PASSWORD in .env file before running in production
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-CHANGE-THIS-PASSWORD-IMMEDIATELY}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -57,17 +58,25 @@ services:
       WEBSOCKET_PORT: 8081
       API_CORS_ORIGINS: ${API_CORS_ORIGINS:-*}
 
+      # TLS/SSL configuration
+      TLS_ENABLED: ${TLS_ENABLED:-false}
+      TLS_CERT: ${TLS_CERT:-/etc/letsencrypt/live/roip.example.com/fullchain.pem}
+      TLS_KEY: ${TLS_KEY:-/etc/letsencrypt/live/roip.example.com/privkey.pem}
+      TLS_CA: ${TLS_CA:-}
+
       # Database configuration
       DB_TYPE: postgresql
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-roip}
       DB_USER: ${DB_USER:-roip}
-      DB_PASSWORD: ${DB_PASSWORD:-roip_secure_password}
+      # SECURITY WARNING: Change DB_PASSWORD in .env file before running in production
+      DB_PASSWORD: ${DB_PASSWORD:-CHANGE-THIS-PASSWORD-IMMEDIATELY}
       DB_POOL_SIZE: ${DB_POOL_SIZE:-20}
 
       # Authentication
-      JWT_SECRET: ${JWT_SECRET:-change-this-secret-in-production}
+      # SECURITY WARNING: Change JWT_SECRET in .env file before running in production
+      JWT_SECRET: ${JWT_SECRET:-CHANGE-THIS-SECRET-IMMEDIATELY}
       JWT_EXPIRY: ${JWT_EXPIRY:-1h}
 
       # Logging
@@ -89,10 +98,14 @@ services:
       - "10000-10100:10000-10100/udp"
       - "8080:8080"
       - "8081:8081"
+      - "8079:8079"  # HTTP redirect port
+      - "443:443"    # HTTPS port (if TLS enabled)
     volumes:
       - ./data:/app/data
       - ./config:/app/config:ro
       - ../roip-server/src:/app/src:ro
+      # TLS certificates (bind mount for Let's Encrypt)
+      - ${CERT_PATH:-./certs}:/etc/letsencrypt:ro
     networks:
       - roip-network
     healthcheck:

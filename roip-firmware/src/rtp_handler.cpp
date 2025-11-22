@@ -5,29 +5,14 @@
 #include <cmath>
 #include <algorithm>
 #include <iostream>
+#include <lwip/def.h>  // For htonl, htons, ntohl, ntohs
 
 // ============================================================================
 // NetworkUtils Implementation
 // ============================================================================
 
-uint32_t NetworkUtils::ntohl(uint32_t value) {
-    return ((value & 0xFF000000) >> 24) |
-           ((value & 0x00FF0000) >> 8) |
-           ((value & 0x0000FF00) << 8) |
-           ((value & 0x000000FF) << 24);
-}
-
-uint16_t NetworkUtils::ntohs(uint16_t value) {
-    return ((value & 0xFF00) >> 8) | ((value & 0x00FF) << 8);
-}
-
-uint32_t NetworkUtils::htonl(uint32_t value) {
-    return ntohl(value);  // Same operation for both directions
-}
-
-uint16_t NetworkUtils::htons(uint16_t value) {
-    return ntohs(value);  // Same operation for both directions
-}
+// Note: ntohl, ntohs, htonl, htons are provided by lwip/def.h
+// No custom implementation needed
 
 uint64_t NetworkUtils::getCurrentNTPTimestamp() {
     // Get current time in seconds and microseconds
@@ -283,21 +268,8 @@ void RTPHandler::generateNTPTimestamp(uint32_t& msw, uint32_t& lsw) {
     NetworkUtils::getNTPTimestamp(msw, lsw);
 }
 
-uint32_t RTPHandler::ntohl(uint32_t value) const {
-    return NetworkUtils::ntohl(value);
-}
-
-uint16_t RTPHandler::ntohs(uint16_t value) const {
-    return NetworkUtils::ntohs(value);
-}
-
-uint32_t RTPHandler::htonl(uint32_t value) const {
-    return NetworkUtils::htonl(value);
-}
-
-uint16_t RTPHandler::htons(uint16_t value) const {
-    return NetworkUtils::htons(value);
-}
+// Note: ntohl, ntohs, htonl, htons are now used directly from lwip/def.h
+// No wrapper methods needed - using global functions from lwip
 
 uint16_t RTPHandler::createRTPPacket(const uint8_t* payload, uint16_t length,
                                       bool marker, uint32_t* out_seq) {

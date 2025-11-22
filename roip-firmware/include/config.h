@@ -18,7 +18,7 @@
 #define AUDIO_FRAME_SIZE_MS 20
 #endif
 
-#define AUDIO_FRAME_SAMPLES ((AUDIO_SAMPLE_RATE * AUDIO_FRAME_SIZE_MS) / 1000)
+// Note: AUDIO_FRAME_SAMPLES is defined in audio_pipeline.h to avoid duplication
 
 #ifndef AUDIO_BUFFER_COUNT
 #define AUDIO_BUFFER_COUNT 10
