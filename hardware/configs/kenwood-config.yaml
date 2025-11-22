@@ -1,0 +1,278 @@
+# Kenwood Radio Configuration for ESP32 RoIP
+# Compatible with: TK-760, TK-780, TK-862, TK-868, TK-880, TK-890, TK-980, TM-261, TM-271, TM-281
+# Last Updated: 2025-01-22
+
+radio:
+  manufacturer: "Kenwood"
+  model_family: "TK Series / TM Series"
+  type: "Mobile"
+
+  # Tested Models
+  tested_models:
+    - "TK-760"
+    - "TK-780"
+    - "TK-862"
+    - "TK-868"
+    - "TK-880"
+    - "TK-890"
+    - "TK-980"
+    - "TM-261"
+    - "TM-271"
+    - "TM-281"
+
+# GPIO Pin Configuration
+gpio:
+  ptt_pin: 32              # PTT output (active LOW)
+  cos_pin: 33              # SQL/Squelch input (active LOW)
+  ptt_polarity: "LOW"      # LOW = transmit, HIGH = receive
+  cos_polarity: "LOW"      # LOW = squelch open (carrier detected)
+  ptt_type: "OPEN_DRAIN"   # Use open drain
+  cos_type: "PULLUP"       # Internal pull-up resistor
+
+# Audio Configuration
+audio:
+  # Receive Audio (from radio to ESP32)
+  rx_audio:
+    pin: 36                # ADC1_CHANNEL_0 (GPIO36)
+    input_level: "500mV"   # Typical Kenwood discriminator level
+    impedance: "10k"       # Input impedance
+    coupling: "AC"         # AC coupling required
+    filter: "300-3000Hz"   # Audio bandpass filter
+    gain_db: 0             # Additional gain if needed
+
+  # Transmit Audio (from ESP32 to radio)
+  tx_audio:
+    pin: 25                # DAC1 (GPIO25)
+    output_level: "250mV"  # Typical Kenwood mic level
+    impedance: "600"       # Output impedance
+    coupling: "AC"         # AC coupling required
+    deviation: "±5kHz"     # For 25kHz channel spacing
+    pre_emphasis: true     # Enable pre-emphasis
+    pre_emphasis_tc: "750us" # Time constant for North America
+
+# Audio Levels (adjust for your specific radio)
+audio_calibration:
+  # RX Audio Levels
+  rx_discriminator_level: 500      # mV peak-to-peak
+  rx_audio_target: 2000            # ADC value target (0-4095)
+  rx_audio_min: 500                # Minimum acceptable level
+  rx_audio_max: 3500               # Maximum before clipping
+
+  # TX Audio Levels
+  tx_mic_level: 250                # mV peak-to-peak
+  tx_audio_target: 128             # DAC value target (0-255)
+  tx_deviation_target: 5000        # Hz (±5kHz for 25kHz)
+  tx_deviation_max: 6000           # Maximum deviation (Hz)
+
+# PTT Timing
+ptt:
+  pre_delay_ms: 50          # Delay before audio starts
+  post_delay_ms: 100        # Delay after audio stops
+  tail_time_ms: 200         # Minimum PTT time
+  timeout_sec: 300          # Maximum transmit time (5 minutes)
+  activation_time_us: 100   # Time to activate PTT
+
+# COS/Squelch Configuration
+cos:
+  detection_delay_ms: 50    # Debounce delay
+  release_delay_ms: 200     # Squelch tail
+  polarity: "LOW"           # Active low (squelch open)
+  type: "HARDWARE"          # Hardware squelch from radio
+
+# VOX Configuration (if COS not available)
+vox:
+  enabled: false            # Disable if using COS
+  threshold: 500            # Audio level threshold
+  hang_time_ms: 1000        # Time to keep PTT active after audio stops
+  attack_time_ms: 10        # Time to activate PTT
+  release_time_ms: 200      # Time to deactivate PTT
+
+# Connector Pinout (Kenwood 6-pin Mini-DIN accessory connector)
+connector:
+  type: "Kenwood 6-pin Mini-DIN"
+
+  pinout:
+    # Looking at connector on radio (not cable)
+    pin_1: "SQL (Squelch) Output (Active LOW when open)"
+    pin_2: "Ground"
+    pin_3: "TX Audio Input (Microphone)"
+    pin_4: "RX Audio Output (9.6k discriminator)"
+    pin_5: "PTT Input (Ground to transmit)"
+    pin_6: "Not Used / +5V on some models"
+
+# Wiring to ESP32
+wiring:
+  connections:
+    - radio_pin: "Pin 4 (9.6k Audio)"
+      esp32_pin: "GPIO36 (ADC1_CH0)"
+      description: "RX audio input via 10kΩ resistor and 10µF cap"
+
+    - radio_pin: "Pin 3 (Mic Input)"
+      esp32_pin: "GPIO25 (DAC1)"
+      description: "TX audio output via 10kΩ resistor and 10µF cap"
+
+    - radio_pin: "Pin 5 (PTT)"
+      esp32_pin: "GPIO32"
+      description: "PTT control via 2N7000 MOSFET or optocoupler"
+
+    - radio_pin: "Pin 1 (SQL)"
+      esp32_pin: "GPIO33"
+      description: "Squelch input via 10kΩ resistor (optional 4.7kΩ pullup)"
+
+    - radio_pin: "Pin 2"
+      esp32_pin: "GND"
+      description: "Common ground connection"
+
+# Required External Components
+external_components:
+  # Audio Coupling
+  - name: "RX Audio Coupling"
+    parts:
+      - "10µF electrolytic capacitor (16V)"
+      - "10kΩ resistor"
+    description: "AC couples 9.6k discriminator audio to ESP32 ADC"
+
+  - name: "TX Audio Coupling"
+    parts:
+      - "10µF electrolytic capacitor (16V)"
+      - "10kΩ resistor"
+    description: "AC couples ESP32 DAC to microphone input"
+
+  # PTT Isolation
+  - name: "PTT Driver"
+    parts:
+      - "2N7000 N-channel MOSFET"
+      - "10kΩ resistor (gate)"
+      - "100kΩ resistor (pull-up)"
+    description: "Isolates ESP32 from PTT line"
+    alternative: "4N35 optocoupler with 1kΩ resistor"
+
+  # COS Input Protection
+  - name: "SQL Protection"
+    parts:
+      - "10kΩ resistor"
+    description: "Current limiting for SQL input"
+    optional:
+      - "4.7kΩ pull-up to 3.3V if needed"
+
+# Channel Configuration
+channel:
+  spacing: "25kHz"          # or "12.5kHz" for narrowband
+  frequency_range_vhf: "136-174MHz"
+  frequency_range_uhf: "400-520MHz" # Varies by model
+  modulation: "FM"
+  power: "5-50W"            # Varies by model
+
+# Performance Specifications
+performance:
+  audio_bandwidth: "300-3000Hz"
+  sensitivity: "-122dBm"    # Typical 12dB SINAD
+  selectivity_adj: "-70dB"  # Adjacent channel
+  selectivity_alt: "-80dB"  # Alternate channel
+  spurious: "-70dB"
+  audio_distortion: "<3%"   # THD
+  frequency_stability: "±2.5ppm"
+
+# Notes and Best Practices
+notes:
+  - "Use 9.6k discriminator audio (Pin 4) for best quality"
+  - "Do NOT use external speaker output - too much filtering"
+  - "Kenwood radios typically have cleaner audio than Motorola"
+  - "Adjust TX audio level to achieve proper deviation (±5kHz for 25kHz)"
+  - "Monitor deviation with service monitor during initial setup"
+  - "PTT must be isolated - use MOSFET or optocoupler"
+  - "Ground ESP32 to radio chassis for best audio quality"
+  - "Keep audio cables short and shielded"
+  - "Some TK models require radio programming to enable accessory connector"
+  - "TM series (amateur) radios are easier to interface than TK (commercial)"
+
+# Calibration Procedure
+calibration:
+  steps:
+    - "Connect ESP32 to radio as per wiring diagram"
+    - "Set radio to test frequency"
+    - "Run audio-test.ino to verify audio path"
+    - "Adjust RX gain if needed (typically 0dB)"
+    - "Transmit test signal and monitor deviation"
+    - "Adjust TX level to achieve ±5kHz deviation (or ±2.5kHz for 12.5kHz)"
+    - "Test PTT activation with ptt-test.ino"
+    - "Verify SQL detection with cos-test.ino"
+    - "Run end-to-end test with e2e-validation.ino"
+
+# Troubleshooting
+troubleshooting:
+  no_rx_audio:
+    - "Check 9.6k audio pin connection (Pin 4)"
+    - "Verify AC coupling capacitor polarity"
+    - "Check ESP32 ADC reading (should show activity)"
+    - "Ensure radio squelch is open"
+    - "Some radios require programming to enable accessory audio"
+
+  no_tx_audio:
+    - "Check microphone pin connection (Pin 3)"
+    - "Verify AC coupling capacitor polarity"
+    - "Monitor deviation with service monitor"
+    - "Increase TX audio level if deviation too low"
+    - "Check radio mic gain setting in programming"
+
+  ptt_not_working:
+    - "Check PTT pin wiring (Pin 5)"
+    - "Verify MOSFET/optocoupler operation"
+    - "Ensure PTT pin goes to ground when transmitting"
+    - "Check for proper ground connection"
+    - "Some models require PTT enable in programming"
+
+  sql_not_working:
+    - "Verify SQL pin connection (Pin 1)"
+    - "Check SQL polarity setting (active LOW)"
+    - "Use VOX mode as alternative"
+    - "May require SQL output enable in radio programming"
+
+# Special Considerations for TK vs TM Series
+model_differences:
+  tk_series:
+    description: "Commercial radios (narrowband capable)"
+    notes:
+      - "Often require dealer programming software (KPG)"
+      - "May have accessory connector disabled by default"
+      - "Typically 12.5kHz channel spacing"
+      - "Very robust and reliable"
+
+  tm_series:
+    description: "Amateur radios (wideband)"
+    notes:
+      - "User-programmable with front panel"
+      - "Accessory connector usually enabled"
+      - "Typically 25kHz channel spacing"
+      - "Easier to interface and configure"
+
+# Programming Software
+programming:
+  tk_series: "KPG-XXD (where XX is model number)"
+  tm_series: "MCP (Memory Control Program)"
+  settings_to_check:
+    - "Accessory connector enabled"
+    - "SQL output enabled"
+    - "Mic gain (typically 50-70%)"
+    - "Deviation (±5kHz for 25kHz, ±2.5kHz for 12.5kHz)"
+    - "De-emphasis/Pre-emphasis enabled"
+
+# Cable Pinout Reference
+cable:
+  type: "6-pin Mini-DIN"
+  diagram: |
+    Front View (looking at radio connector):
+         ___
+      6 /   \ 1
+       |  5  |
+     4 |     | 2
+        \___/
+          3
+
+# References
+references:
+  - "Kenwood TK Series Service Manual"
+  - "Kenwood TM Series User Manual"
+  - "Kenwood Accessory Connector Specifications"
+  - "ESP32 RoIP Hardware Validation Guide"
+  - "Kenwood KPG Programming Software Manual"

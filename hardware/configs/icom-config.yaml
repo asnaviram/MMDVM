@@ -1,0 +1,314 @@
+# Icom Radio Configuration for ESP32 RoIP
+# Compatible with: IC-F series, IC-V series, IC-U series, IC-2720, IC-2820
+# Last Updated: 2025-01-22
+
+radio:
+  manufacturer: "Icom"
+  model_family: "IC-F Series / IC-V/U Series"
+  type: "Mobile"
+
+  # Tested Models
+  tested_models:
+    - "IC-F5021"
+    - "IC-F6021"
+    - "IC-F5061"
+    - "IC-F6061"
+    - "IC-V8000"
+    - "IC-U82"
+    - "IC-2720H"
+    - "IC-2820H"
+
+# GPIO Pin Configuration
+gpio:
+  ptt_pin: 32              # PTT output (active LOW)
+  cos_pin: 33              # SQL/Squelch input (active LOW)
+  ptt_polarity: "LOW"      # LOW = transmit, HIGH = receive
+  cos_polarity: "LOW"      # LOW = squelch open (carrier detected)
+  ptt_type: "OPEN_DRAIN"   # Use open drain
+  cos_type: "PULLUP"       # Internal pull-up resistor
+
+# Audio Configuration
+audio:
+  # Receive Audio (from radio to ESP32)
+  rx_audio:
+    pin: 36                # ADC1_CHANNEL_0 (GPIO36)
+    input_level: "400mV"   # Typical Icom discriminator level
+    impedance: "10k"       # Input impedance
+    coupling: "AC"         # AC coupling required
+    filter: "300-3000Hz"   # Audio bandpass filter
+    gain_db: 0             # Additional gain if needed
+
+  # Transmit Audio (from ESP32 to radio)
+  tx_audio:
+    pin: 25                # DAC1 (GPIO25)
+    output_level: "200mV"  # Typical Icom mic level (lower than Motorola/Kenwood)
+    impedance: "600"       # Output impedance
+    coupling: "AC"         # AC coupling required
+    deviation: "±5kHz"     # For 25kHz channel spacing
+    pre_emphasis: true     # Enable pre-emphasis
+    pre_emphasis_tc: "750us" # Time constant for North America
+
+# Audio Levels (adjust for your specific radio)
+audio_calibration:
+  # RX Audio Levels
+  rx_discriminator_level: 400      # mV peak-to-peak (Icom typically lower)
+  rx_audio_target: 1800            # ADC value target (0-4095)
+  rx_audio_min: 400                # Minimum acceptable level
+  rx_audio_max: 3200               # Maximum before clipping
+
+  # TX Audio Levels
+  tx_mic_level: 200                # mV peak-to-peak (Icom sensitive mic input)
+  tx_audio_target: 100             # DAC value target (0-255) - lower than others
+  tx_deviation_target: 5000        # Hz (±5kHz for 25kHz)
+  tx_deviation_max: 6000           # Maximum deviation (Hz)
+
+# PTT Timing
+ptt:
+  pre_delay_ms: 100         # Icom needs longer pre-delay
+  post_delay_ms: 150        # Longer tail for Icom
+  tail_time_ms: 250         # Minimum PTT time
+  timeout_sec: 300          # Maximum transmit time (5 minutes)
+  activation_time_us: 100   # Time to activate PTT
+
+# COS/Squelch Configuration
+cos:
+  detection_delay_ms: 75    # Longer debounce for Icom
+  release_delay_ms: 250     # Longer squelch tail
+  polarity: "LOW"           # Active low (squelch open)
+  type: "HARDWARE"          # Hardware squelch from radio
+
+# VOX Configuration (if COS not available)
+vox:
+  enabled: false            # Disable if using COS
+  threshold: 400            # Lower threshold for Icom
+  hang_time_ms: 1200        # Longer hang time
+  attack_time_ms: 10        # Time to activate PTT
+  release_time_ms: 250      # Time to deactivate PTT
+
+# Connector Pinout (Icom 13-pin DIN accessory connector)
+connector:
+  type: "Icom 13-pin DIN"
+
+  pinout:
+    # Common on IC-F series
+    pin_1: "Ground"
+    pin_2: "AF Output (Discriminator)"
+    pin_3: "Ground"
+    pin_4: "PTT (Ground to transmit)"
+    pin_5: "SQL/Mute Output (Active LOW)"
+    pin_6: "Modulation Input (Mic)"
+    pin_7: "Ground"
+    pin_8: "+8V Output (regulated, max 100mA)"
+    pin_9: "Not Used"
+    pin_10: "Not Used"
+    pin_11: "External Speaker Output"
+    pin_12: "+13.8V (vehicle power)"
+    pin_13: "Ground"
+
+# Alternative Connectors
+alternative_connectors:
+  data_connector:
+    description: "Some models use 6-pin mini-DIN data connector"
+    pinout:
+      pin_1: "Ground"
+      pin_2: "SQL Output"
+      pin_3: "RX Audio (9600 baud)"
+      pin_4: "TX Audio (9600 baud)"
+      pin_5: "PTT"
+      pin_6: "+5V Output"
+
+# Wiring to ESP32
+wiring:
+  connections:
+    - radio_pin: "Pin 2 (AF Output)"
+      esp32_pin: "GPIO36 (ADC1_CH0)"
+      description: "RX audio input via 10kΩ resistor and 10µF cap"
+
+    - radio_pin: "Pin 6 (Modulation)"
+      esp32_pin: "GPIO25 (DAC1)"
+      description: "TX audio output via 22kΩ resistor and 10µF cap (higher value for Icom)"
+
+    - radio_pin: "Pin 4 (PTT)"
+      esp32_pin: "GPIO32"
+      description: "PTT control via 2N7000 MOSFET or optocoupler"
+
+    - radio_pin: "Pin 5 (SQL)"
+      esp32_pin: "GPIO33"
+      description: "Squelch input via 10kΩ resistor (optional 4.7kΩ pullup)"
+
+    - radio_pin: "Pin 1, 3, 7, 13"
+      esp32_pin: "GND"
+      description: "Common ground connection"
+
+# Required External Components
+external_components:
+  # Audio Coupling
+  - name: "RX Audio Coupling"
+    parts:
+      - "10µF electrolytic capacitor (16V)"
+      - "10kΩ resistor"
+    description: "AC couples discriminator audio to ESP32 ADC"
+
+  - name: "TX Audio Coupling"
+    parts:
+      - "10µF electrolytic capacitor (16V)"
+      - "22kΩ resistor (higher than Motorola/Kenwood)"
+    description: "AC couples ESP32 DAC to mic input - Icom has sensitive mic input!"
+
+  # PTT Isolation
+  - name: "PTT Driver"
+    parts:
+      - "2N7000 N-channel MOSFET"
+      - "10kΩ resistor (gate)"
+      - "100kΩ resistor (pull-up)"
+    description: "Isolates ESP32 from PTT line"
+    alternative: "4N35 optocoupler with 1kΩ resistor (recommended for Icom)"
+
+  # COS Input Protection
+  - name: "SQL Protection"
+    parts:
+      - "10kΩ resistor"
+    description: "Current limiting for SQL input"
+    optional:
+      - "4.7kΩ pull-up to 3.3V if needed"
+
+# Channel Configuration
+channel:
+  spacing: "25kHz"          # or "12.5kHz" for narrowband
+  frequency_range_vhf: "136-174MHz"
+  frequency_range_uhf: "400-520MHz" # Varies by model
+  modulation: "FM"
+  power: "5-50W"            # Varies by model
+
+# Performance Specifications
+performance:
+  audio_bandwidth: "300-3000Hz"
+  sensitivity: "-121dBm"    # Typical 12dB SINAD
+  selectivity_adj: "-70dB"  # Adjacent channel
+  selectivity_alt: "-80dB"  # Alternate channel
+  spurious: "-70dB"
+  audio_distortion: "<3%"   # THD
+  frequency_stability: "±1.5ppm" # Icom typically better than others
+
+# Notes and Best Practices
+notes:
+  - "Icom radios have MORE SENSITIVE mic input - use higher value resistor (22kΩ)"
+  - "Start with LOWER TX audio level to avoid over-deviation"
+  - "Use discriminator audio (Pin 2) for best quality"
+  - "Icom typically needs longer PTT pre/post delays"
+  - "PTT isolation is CRITICAL for Icom - use optocoupler if possible"
+  - "Ground ESP32 to radio chassis for best audio quality"
+  - "Keep audio cables short and well-shielded"
+  - "Some IC-F models require cloning software to enable accessory connector"
+  - "Icom radios typically have excellent audio quality"
+  - "Monitor deviation carefully - easy to over-deviate"
+
+# Calibration Procedure
+calibration:
+  steps:
+    - "Connect ESP32 to radio as per wiring diagram"
+    - "Set radio to test frequency"
+    - "Run audio-test.ino to verify audio path"
+    - "Start with TX audio level at 50% of other brands"
+    - "Transmit test signal and monitor deviation"
+    - "Slowly increase TX level to achieve ±5kHz deviation (or ±2.5kHz for 12.5kHz)"
+    - "If over-deviation occurs, increase TX coupling resistor to 33kΩ"
+    - "Test PTT activation with ptt-test.ino"
+    - "Verify SQL detection with cos-test.ino"
+    - "Run end-to-end test with e2e-validation.ino"
+
+# Troubleshooting
+troubleshooting:
+  no_rx_audio:
+    - "Check AF output pin connection (Pin 2)"
+    - "Verify AC coupling capacitor polarity"
+    - "Check ESP32 ADC reading (should show activity)"
+    - "Ensure radio squelch is open"
+    - "Some models require cloning software to enable accessory audio"
+
+  no_tx_audio:
+    - "Check modulation pin connection (Pin 6)"
+    - "Verify AC coupling capacitor polarity"
+    - "Monitor deviation with service monitor"
+    - "Reduce TX audio level if over-deviation"
+    - "Try increasing coupling resistor to 33kΩ or 47kΩ"
+
+  over_deviation:
+    - "This is COMMON with Icom radios"
+    - "Reduce TX audio level in software"
+    - "Increase TX coupling resistor (try 33kΩ, 47kΩ, or even 100kΩ)"
+    - "Check mic gain setting in radio programming"
+
+  ptt_not_working:
+    - "Check PTT pin wiring (Pin 4)"
+    - "Verify optocoupler operation (recommended for Icom)"
+    - "Ensure PTT pin goes to ground when transmitting"
+    - "Check for proper ground connection"
+    - "Some models have PTT delay - increase pre_delay_ms"
+
+  sql_not_working:
+    - "Verify SQL pin connection (Pin 5)"
+    - "Check SQL polarity setting (active LOW)"
+    - "Use VOX mode as alternative"
+    - "May require SQL output enable in radio programming"
+
+# Special Considerations by Model Series
+model_differences:
+  ic_f_series:
+    description: "Commercial radios (IC-F5021, IC-F6021, etc.)"
+    notes:
+      - "Require CS-F5021/CS-F6021 cloning software"
+      - "Very robust and reliable"
+      - "Accessory connector may need enabling in software"
+      - "Excellent audio quality"
+      - "Wide/Narrow band capable"
+
+  ic_v_u_series:
+    description: "VHF/UHF mobile radios (IC-V8000, IC-U82, etc.)"
+    notes:
+      - "User-programmable features"
+      - "Similar to F-series but with more user controls"
+      - "Good for amateur radio use"
+
+  ic_amateur_series:
+    description: "Amateur dual-band radios (IC-2720H, IC-2820H)"
+    notes:
+      - "9600 baud data connector often used"
+      - "Very easy to interface"
+      - "No programming software needed for basic use"
+      - "Dual-band operation"
+
+# Programming Software
+programming:
+  ic_f_series: "CS-F5021/CS-F6021 Cloning Software"
+  ic_v_u_series: "CS-V8000 or model-specific software"
+  settings_to_check:
+    - "Accessory connector enabled"
+    - "SQL output enabled"
+    - "Mic gain (typically 30-50% - lower than other brands)"
+    - "Deviation (±5kHz for 25kHz, ±2.5kHz for 12.5kHz)"
+    - "De-emphasis/Pre-emphasis enabled"
+    - "PTT delay (if available)"
+
+# Cable Pinout Reference
+cable:
+  type: "13-pin DIN"
+  diagram: |
+    Front View (looking at radio connector):
+           ___
+       1  |   | 8
+      2   |   |  9
+     3    |   |   10
+      4   |   |  11
+       5  |   | 12
+          |___|
+            6  7  13
+
+# References
+references:
+  - "Icom IC-F Series Service Manual"
+  - "Icom IC-V/U Series User Manual"
+  - "Icom Accessory Connector Specifications"
+  - "ESP32 RoIP Hardware Validation Guide"
+  - "Icom CS Cloning Software Manual"
+  - "Icom 9600 Baud Packet Interface Documentation"

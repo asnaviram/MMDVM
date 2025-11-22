@@ -1,6 +1,7 @@
 /**
  * Database Complex Queries Tests
  */
+import { describe, test, expect, beforeAll, afterAll } from '@jest/globals';
 import { DatabaseModule } from '../../src/database/database.js';
 import fs from 'fs';
 

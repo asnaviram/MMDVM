@@ -14,7 +14,9 @@
  */
 
 #include "audio_pipeline.h"
+#if !defined(ESP32S3) && !defined(ESP32C3) && !defined(ESP32S2)
 #include <driver/dac.h>
+#endif
 
 #ifdef AUDIO_USE_PWM_DAC
 #include <driver/ledc.h>

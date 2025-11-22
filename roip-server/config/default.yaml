@@ -26,7 +26,17 @@ server:
   api:
     port: 8080
     enable_cors: true
-    cors_origins: "*"  # In production, specify allowed origins
+    # SECURITY: Specify allowed origins (comma-separated or array)
+    # Replace with your actual frontend URLs in production
+    cors_origins:
+      - "http://localhost:3000"
+      - "http://localhost:8080"
+      - "https://localhost:3000"
+      - "https://localhost:8443"
+    # For production, use specific domains:
+    # cors_origins:
+    #   - "https://roip.example.com"
+    #   - "https://admin.roip.example.com"
 
   # WebSocket settings
   websocket:
@@ -196,6 +206,13 @@ tls:
 
 # Security settings
 security:
+  # WebSocket security
+  websocket:
+    require_auth: true
+    max_connections_per_ip: 10
+    connection_window_ms: 60000  # 1 minute
+    # Origin validation is inherited from api.cors_origins
+
   # Rate limiting (requests per minute)
   rate_limit:
     enabled: true

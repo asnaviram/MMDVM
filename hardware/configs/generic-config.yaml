@@ -1,0 +1,364 @@
+# Generic Radio Configuration for ESP32 RoIP
+# Universal configuration template for any FM radio with accessory connector
+# Last Updated: 2025-01-22
+
+radio:
+  manufacturer: "Generic"
+  model_family: "Universal FM Radio"
+  type: "Mobile/Portable/Base"
+
+  # This configuration works with most FM radios
+  supported_types:
+    - "Commercial FM radios"
+    - "Amateur FM radios"
+    - "LMR (Land Mobile Radio)"
+    - "PMR446"
+    - "FRS/GMRS"
+    - "Marine VHF"
+    - "Business Band"
+
+# GPIO Pin Configuration
+gpio:
+  ptt_pin: 32              # PTT output (active LOW typical)
+  cos_pin: 33              # COS/Squelch input (active LOW typical)
+  ptt_polarity: "LOW"      # LOW = transmit, HIGH = receive (adjust if needed)
+  cos_polarity: "LOW"      # LOW = carrier detected (adjust if needed)
+  ptt_type: "OPEN_DRAIN"   # Use open drain for safety
+  cos_type: "PULLUP"       # Internal pull-up resistor
+
+# Audio Configuration
+audio:
+  # Receive Audio (from radio to ESP32)
+  rx_audio:
+    pin: 36                # ADC1_CHANNEL_0 (GPIO36)
+    input_level: "300-600mV"  # Typical range for most radios
+    impedance: "10k"       # High impedance input
+    coupling: "AC"         # AC coupling required
+    filter: "300-3000Hz"   # Standard communications audio
+    gain_db: 0             # Start with 0dB, adjust as needed
+
+  # Transmit Audio (from ESP32 to radio)
+  tx_audio:
+    pin: 25                # DAC1 (GPIO25)
+    output_level: "200-400mV"  # Typical range
+    impedance: "600"       # Standard audio impedance
+    coupling: "AC"         # AC coupling required
+    deviation: "±3-5kHz"   # Depends on channel spacing
+    pre_emphasis: true     # Usually enabled
+    pre_emphasis_tc: "750us" # North America/Europe standard
+
+# Audio Levels (starting point - adjust for your radio)
+audio_calibration:
+  # RX Audio Levels
+  rx_discriminator_level: 400      # mV peak-to-peak (typical)
+  rx_audio_target: 2000            # ADC value target (0-4095)
+  rx_audio_min: 500                # Minimum acceptable level
+  rx_audio_max: 3500               # Maximum before clipping
+
+  # TX Audio Levels
+  tx_mic_level: 300                # mV peak-to-peak (typical)
+  tx_audio_target: 128             # DAC value target (0-255)
+  tx_deviation_target: 4000        # Hz (adjust based on channel spacing)
+  tx_deviation_max: 5000           # Maximum deviation (Hz)
+
+# PTT Timing (conservative defaults)
+ptt:
+  pre_delay_ms: 100         # Delay before audio starts
+  post_delay_ms: 150        # Delay after audio stops
+  tail_time_ms: 250         # Minimum PTT time
+  timeout_sec: 180          # Maximum transmit time (3 minutes)
+  activation_time_us: 100   # Time to activate PTT
+
+# COS/Squelch Configuration
+cos:
+  detection_delay_ms: 75    # Debounce delay
+  release_delay_ms: 250     # Squelch tail
+  polarity: "LOW"           # Active low (typical)
+  type: "HARDWARE"          # Hardware squelch from radio
+
+# VOX Configuration (fallback if no COS)
+vox:
+  enabled: true             # Enable if COS not available
+  threshold: 500            # Audio level threshold
+  hang_time_ms: 1000        # Time to keep PTT active after audio stops
+  attack_time_ms: 10        # Time to activate PTT
+  release_time_ms: 200      # Time to deactivate PTT
+
+# Common Audio Sources
+audio_sources:
+  discriminator:
+    description: "Best quality - post-discriminator audio"
+    typical_level: "400-600mV"
+    impedance: "10k"
+    notes: "Preferred source - no filtering"
+
+  line_out:
+    description: "Line-level output"
+    typical_level: "500mV-1V"
+    impedance: "600-10k"
+    notes: "Good quality but may have filtering"
+
+  speaker:
+    description: "External speaker output"
+    typical_level: "1-4V"
+    impedance: "4-8 ohms"
+    notes: "NOT RECOMMENDED - too much filtering and high level"
+    warning: "Requires voltage divider and may have poor audio quality"
+
+# Common Audio Inputs
+audio_inputs:
+  microphone:
+    description: "Microphone input"
+    typical_level: "10-50mV"
+    impedance: "600-2k"
+    notes: "Most sensitive - start with low TX audio level"
+
+  line_in:
+    description: "Line-level input"
+    typical_level: "100-500mV"
+    impedance: "10k-50k"
+    notes: "Less sensitive than mic - may need higher TX level"
+
+  modulation:
+    description: "Direct modulation input"
+    typical_level: "300-800mV"
+    impedance: "10k"
+    notes: "Bypasses mic preamp - good for data"
+
+# Wiring to ESP32 (Universal)
+wiring:
+  connections:
+    - radio_pin: "RX Audio Output"
+      esp32_pin: "GPIO36 (ADC1_CH0)"
+      description: "Connect via 10kΩ resistor and 10µF capacitor"
+      schematic: "Radio RX --- 10µF cap --- 10kΩ --- GPIO36"
+
+    - radio_pin: "TX Audio Input"
+      esp32_pin: "GPIO25 (DAC1)"
+      description: "Connect via 10-22kΩ resistor and 10µF capacitor"
+      schematic: "GPIO25 --- 10µF cap --- 10-22kΩ --- Radio TX"
+      note: "Start with 10kΩ, increase if over-deviation occurs"
+
+    - radio_pin: "PTT"
+      esp32_pin: "GPIO32"
+      description: "Connect via MOSFET or optocoupler for isolation"
+      schematic: "See PTT isolation circuit below"
+
+    - radio_pin: "Squelch/COS"
+      esp32_pin: "GPIO33"
+      description: "Connect via 10kΩ current-limiting resistor"
+      schematic: "Radio SQL --- 10kΩ --- GPIO33"
+
+    - radio_pin: "Ground"
+      esp32_pin: "GND"
+      description: "Common ground - ESSENTIAL"
+
+# Required External Components
+external_components:
+  # Audio Coupling Capacitors
+  - name: "Audio Coupling Capacitors"
+    parts:
+      - "2x 10µF electrolytic capacitor (16V)"
+    description: "AC couples audio, blocks DC"
+    polarity: "Positive to radio side"
+
+  # Audio Resistors
+  - name: "Audio Coupling Resistors"
+    parts:
+      - "1x 10kΩ resistor (RX audio)"
+      - "1x 10-22kΩ resistor (TX audio, adjust based on radio)"
+    description: "Limits current and adjusts audio level"
+
+  # PTT Isolation Circuit
+  - name: "PTT Isolation (MOSFET option)"
+    parts:
+      - "1x 2N7000 N-channel MOSFET"
+      - "1x 10kΩ resistor (gate to GPIO32)"
+      - "1x 100kΩ resistor (drain pull-up)"
+    schematic: |
+      GPIO32 --- 10kΩ --- Gate
+                         Drain --- 100kΩ to +V and to Radio PTT
+                         Source --- GND
+
+  - name: "PTT Isolation (Optocoupler option - safer)"
+    parts:
+      - "1x 4N35 optocoupler"
+      - "1x 1kΩ resistor (LED current limit)"
+      - "1x 10kΩ resistor (pull-up)"
+    schematic: |
+      GPIO32 --- 1kΩ --- LED+ (4N35 pin 1)
+                  LED- (pin 2) --- GND
+      Radio PTT --- Collector (pin 5) --- 10kΩ to +V
+      Radio GND --- Emitter (pin 4)
+
+  # COS Input Protection
+  - name: "COS/SQL Input Protection"
+    parts:
+      - "1x 10kΩ resistor"
+      - "1x 4.7kΩ resistor (optional pull-up)"
+    description: "Protects ESP32 GPIO"
+
+# Channel Configuration (adjust for your radio)
+channel:
+  spacing: "12.5kHz or 25kHz"  # Check your radio specs
+  modulation: "FM"
+  deviation_narrow: "±2.5kHz"  # For 12.5kHz spacing
+  deviation_wide: "±5kHz"      # For 25kHz spacing
+
+# Step-by-Step Connection Guide
+connection_guide:
+  step_1:
+    description: "Identify Audio Connections"
+    actions:
+      - "Find discriminator or line-out audio on your radio"
+      - "Find microphone or line-in audio on your radio"
+      - "Consult radio service manual if needed"
+
+  step_2:
+    description: "Identify Control Connections"
+    actions:
+      - "Find PTT connection (usually to ground)"
+      - "Find COS/SQL connection if available"
+      - "Find ground connection"
+
+  step_3:
+    description: "Build Interface Circuit"
+    actions:
+      - "Assemble audio coupling circuits (caps + resistors)"
+      - "Build PTT isolation circuit (MOSFET or optocoupler)"
+      - "Add COS protection resistor if using COS"
+
+  step_4:
+    description: "Make Connections"
+    actions:
+      - "Connect RX audio with coupling circuit"
+      - "Connect TX audio with coupling circuit"
+      - "Connect PTT with isolation circuit"
+      - "Connect COS if available"
+      - "Connect all grounds together"
+
+  step_5:
+    description: "Test and Calibrate"
+    actions:
+      - "Run wifi-test.ino to verify WiFi"
+      - "Run audio-test.ino to verify audio path"
+      - "Run gpio-test.ino to verify PTT/COS"
+      - "Adjust TX audio level to achieve proper deviation"
+      - "Run e2e-validation.ino for full system test"
+
+# Troubleshooting Guide
+troubleshooting:
+  no_rx_audio:
+    steps:
+      - "Verify RX audio source is correct (use discriminator if possible)"
+      - "Check capacitor polarity (positive to radio)"
+      - "Test audio with multimeter or oscilloscope"
+      - "Try increasing RX gain in software"
+      - "Check ground connection"
+
+  no_tx_audio:
+    steps:
+      - "Start with LOW TX audio level to avoid over-deviation"
+      - "Check capacitor polarity (positive to ESP32)"
+      - "Monitor deviation with service monitor or spectrum analyzer"
+      - "Increase TX level gradually until proper deviation achieved"
+      - "If over-deviation, increase TX coupling resistor value"
+
+  ptt_not_working:
+    steps:
+      - "Verify PTT polarity (most radios use ground-to-transmit)"
+      - "Check MOSFET/optocoupler wiring"
+      - "Test PTT isolation circuit separately"
+      - "Try direct connection temporarily for testing (RISKY)"
+      - "Check radio programming - PTT may need enabling"
+
+  cos_not_working:
+    steps:
+      - "Verify COS polarity (usually active LOW)"
+      - "Check COS pin connection and resistor"
+      - "Some radios need COS enabled in programming"
+      - "If no COS available, enable VOX mode"
+      - "Test with multimeter - should change with squelch"
+
+  audio_distortion:
+    steps:
+      - "Reduce TX audio level (likely over-deviation)"
+      - "Check for ground loops"
+      - "Increase TX coupling resistor value"
+      - "Check deviation with service monitor"
+      - "Verify pre-emphasis is enabled"
+
+  audio_too_quiet:
+    steps:
+      - "Increase RX/TX audio levels in software"
+      - "Check audio source level at radio"
+      - "Verify coupling components are correct values"
+      - "Check for poor connections"
+
+# Deviation Setting Guide
+deviation_guide:
+  channel_12_5khz:
+    deviation: "±2.5kHz"
+    typical_level: "200-300mV"
+    notes: "Narrowband - lower audio level needed"
+
+  channel_25khz:
+    deviation: "±5kHz"
+    typical_level: "300-500mV"
+    notes: "Wideband - higher audio level"
+
+  measurement:
+    tools:
+      - "Service monitor (preferred)"
+      - "Spectrum analyzer"
+      - "Deviation meter"
+    procedure:
+      - "Connect radio to service monitor"
+      - "Set radio to test frequency"
+      - "Activate PTT via ESP32"
+      - "Send 1kHz test tone"
+      - "Adjust TX audio level to achieve target deviation"
+      - "Verify deviation doesn't exceed maximum"
+
+# Safety Notes
+safety:
+  - "ALWAYS use PTT isolation - never connect GPIO directly to radio PTT"
+  - "Verify voltage levels before connecting"
+  - "Start with LOW TX audio levels to avoid over-deviation"
+  - "Use proper ESD precautions when working with ESP32"
+  - "Ensure proper grounding to prevent ground loops"
+  - "Test thoroughly before deploying in production"
+  - "Have radio service manual available"
+  - "Monitor for overheating during extended operation"
+
+# Testing Checklist
+testing_checklist:
+  hardware:
+    - "All wiring connections secure"
+    - "No shorts between pins"
+    - "Proper polarity on capacitors"
+    - "PTT isolation circuit working"
+    - "Ground connections solid"
+
+  software:
+    - "WiFi connection stable"
+    - "Audio path verified (both RX and TX)"
+    - "PTT activation working"
+    - "COS detection working (if used)"
+    - "Deviation within limits"
+    - "No audio clipping"
+
+  performance:
+    - "Audio quality acceptable"
+    - "Latency within limits"
+    - "No packet loss"
+    - "Temperature stable"
+    - "Long-term stability verified"
+
+# References
+references:
+  - "ESP32 RoIP Hardware Validation Guide"
+  - "Radio service manual (model-specific)"
+  - "ESP32 Technical Reference Manual"
+  - "FM Radio Interface Best Practices"
+  - "Audio Coupling and Impedance Matching"

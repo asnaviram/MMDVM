@@ -1,0 +1,282 @@
+# ESP32 RoIP Server - Staging Configuration
+# Testing environment matching production with debug features
+# All settings can be overridden via environment variables
+
+server:
+  name: "ESP32 RoIP Server (Staging)"
+  version: "1.0.0"
+
+  # Server binding
+  host: "0.0.0.0"
+
+  # SIP settings
+  sip:
+    port: 5160  # Different port from production
+    transport: "udp"
+    realm: "roip.staging"
+    user_agent: "ESP32-RoIP-Server/1.0-staging"
+
+  # RTP settings
+  rtp:
+    port_min: 11000
+    port_max: 11100
+    payload_type: 96
+
+  # Web API settings
+  api:
+    port: 8180  # Different port from production
+    enable_cors: true
+    cors_origins: "*"  # Permissive in staging
+
+  # WebSocket settings
+  websocket:
+    port: 8181  # Different port from production
+    ping_interval: 30000
+
+# Performance optimization settings
+performance:
+  # Cluster mode (reduced for staging)
+  cluster:
+    enabled: false  # Single process for easier debugging
+    workers: 2
+
+  # HTTP keep-alive settings
+  keepAlive:
+    enabled: true
+    timeout: 65000
+    headersTimeout: 66000
+
+  # Compression settings
+  compression:
+    enabled: true
+    level: 4  # Lower compression for faster response
+    threshold: 1024
+
+  # API response caching
+  cache:
+    enabled: true
+    defaultTTL: 10  # Shorter TTL for testing
+    checkPeriod: 60
+    logStats: true
+
+  # Event loop monitoring
+  eventLoopMonitoring:
+    enabled: true
+    lagThreshold: 50  # More sensitive in staging
+    checkInterval: 5000
+
+  # Memory monitoring
+  memoryMonitoring:
+    enabled: true
+    threshold: 0.85
+    checkInterval: 30000
+
+# Database configuration
+database:
+  type: "postgresql"  # Use PostgreSQL in staging
+
+  # SQLite settings (fallback)
+  sqlite:
+    file: "./data/roip_staging.db"
+
+  # PostgreSQL settings
+  postgresql:
+    enabled: true
+    host: "postgres-staging"
+    port: 5432
+    database: "roip_staging"
+    username: "roip_staging"
+    password: "${DB_PASSWORD}"  # From environment
+    pool_size: 10
+
+# Authentication settings
+auth:
+  # JWT tokens for API
+  jwt_secret: "${JWT_SECRET}"  # From environment
+  jwt_expiry: "24h"  # Longer expiry in staging
+
+  # SIP digest authentication
+  sip_auth_enabled: true
+
+  # Admin user
+  admin:
+    username: "staging_admin"
+    password: "${ADMIN_PASSWORD}"  # From environment
+
+# STUN/TURN settings for NAT traversal
+nat_traversal:
+  # STUN server
+  stun:
+    enabled: true
+    servers:
+      - "stun:stun.l.google.com:19302"
+      - "stun:stun1.l.google.com:19302"
+
+  # TURN relay server
+  turn:
+    enabled: true
+    host: "coturn-staging"
+    port: 3478
+    realm: "roip.staging"
+    secret: "${TURN_SECRET}"  # From environment
+
+# Audio/Codec settings
+audio:
+  # Supported codecs
+  codecs:
+    - name: "opus"
+      payload_type: 96
+      sample_rate: 24000
+      channels: 1
+      bitrate: 32000
+
+    - name: "pcmu"
+      payload_type: 0
+      sample_rate: 8000
+      channels: 1
+
+  # Jitter buffer settings
+  jitter_buffer:
+    min_delay_ms: 20
+    max_delay_ms: 200
+    target_delay_ms: 50
+
+# Call routing and mixing
+routing:
+  # Maximum simultaneous calls (reduced for staging)
+  max_concurrent_calls: 100
+
+  # Call timeout (seconds)
+  call_timeout: 1800  # 30 minutes
+
+  # Enable audio mixing/conferencing
+  enable_mixing: true
+
+  # Maximum participants in a conference
+  max_conference_size: 10
+
+# Recording settings
+recording:
+  enabled: true
+  path: "./recordings"
+  format: "wav"
+  retention_days: 7  # Shorter retention in staging
+
+# Logging configuration
+logging:
+  level: "debug"  # Verbose logging in staging
+
+  # Console logging
+  console:
+    enabled: true
+    colorize: true  # Colored output for easier reading
+
+  # File logging
+  file:
+    enabled: true
+    path: "./logs"
+    filename: "roip-staging.log"
+    max_size: "20m"
+    max_files: 5
+
+  # SIP message logging (enabled for debugging)
+  sip_messages: true
+
+  # RTP packet logging (limited)
+  rtp_packets: false
+
+# Quality of Service
+qos:
+  # DSCP marking
+  dscp_enabled: true
+  dscp_value: 46
+
+# Security settings
+security:
+  # Rate limiting (relaxed for testing)
+  rate_limit:
+    enabled: true
+    window_ms: 60000
+    max_requests: 500  # More permissive in staging
+
+  # HTTPS/TLS settings
+  https:
+    enabled: false  # Typically not needed in staging
+    cert_file: "./certs/staging.crt"
+    key_file: "./certs/staging.key"
+
+  # SRTP
+  srtp:
+    enabled: false
+    crypto_suites:
+      - "AES_CM_128_HMAC_SHA1_80"
+
+# TLS configuration
+tls:
+  enabled: false
+  cert: "./certs/staging.crt"
+  key: "./certs/staging.key"
+  ca: "./certs/ca.crt"
+  redirect_http: false
+  http_redirect_port: 8179
+
+# Device management
+devices:
+  # Auto-register devices
+  auto_registration: true
+
+  # Registration expiry (seconds)
+  registration_expiry: 3600
+
+  # Maximum devices per user
+  max_devices_per_user: 20
+
+# Monitoring and health
+monitoring:
+  # Metrics endpoint
+  metrics_enabled: true
+  metrics_port: 9190
+
+  # Health check endpoint
+  health_check_enabled: true
+
+  # Statistics update interval (seconds)
+  stats_interval: 5  # More frequent for testing
+
+# Features
+features:
+  # DTMF relay
+  dtmf_relay: true
+
+  # Voice activity detection
+  vad: true
+
+  # Comfort noise generation
+  cng: true
+
+  # Forward error correction
+  fec: true
+
+  # Debug features (staging only)
+  debug_mode: true
+  trace_sip: true
+  trace_rtp: false
+
+# Rate limiting configuration
+rate_limiting:
+  window_ms: 60000
+  max_requests: 500  # More permissive
+  auth_max_requests: 20
+  device_max_requests: 120
+  call_max_requests: 40
+
+# Testing features
+testing:
+  # Enable test endpoints
+  enable_test_endpoints: true
+
+  # Mock external services
+  mock_services: false
+
+  # Test data generation
+  generate_test_data: true

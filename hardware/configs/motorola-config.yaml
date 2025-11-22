@@ -1,0 +1,240 @@
+# Motorola Radio Configuration for ESP32 RoIP
+# Compatible with: GM300, GM350, GM360, GM380, CDM750, CDM1250, CDM1550, Maxtrac, Radius
+# Last Updated: 2025-01-22
+
+radio:
+  manufacturer: "Motorola"
+  model_family: "GM Series / CDM Series"
+  type: "Mobile"
+
+  # Tested Models
+  tested_models:
+    - "GM300"
+    - "GM350"
+    - "GM360"
+    - "GM380"
+    - "CDM750"
+    - "CDM1250"
+    - "CDM1550"
+    - "Maxtrac"
+    - "Radius M1225"
+
+# GPIO Pin Configuration
+gpio:
+  ptt_pin: 32              # PTT output (active LOW)
+  cos_pin: 33              # COS/Squelch input (active LOW)
+  ptt_polarity: "LOW"      # LOW = transmit, HIGH = receive
+  cos_polarity: "LOW"      # LOW = carrier detected
+  ptt_type: "OPEN_DRAIN"   # Use open drain for Motorola
+  cos_type: "PULLUP"       # Internal pull-up resistor
+
+# Audio Configuration
+audio:
+  # Receive Audio (from radio to ESP32)
+  rx_audio:
+    pin: 36                # ADC1_CHANNEL_0 (GPIO36)
+    input_level: "600mV"   # Typical Motorola discriminator level
+    impedance: "10k"       # Input impedance
+    coupling: "AC"         # AC coupling required
+    filter: "300-3000Hz"   # Audio bandpass filter
+    gain_db: 0             # Additional gain if needed
+
+  # Transmit Audio (from ESP32 to radio)
+  tx_audio:
+    pin: 25                # DAC1 (GPIO25)
+    output_level: "300mV"  # Typical Motorola mic level
+    impedance: "600"       # Output impedance
+    coupling: "AC"         # AC coupling required
+    deviation: "±3kHz"     # For 12.5kHz channel spacing
+    pre_emphasis: true     # Enable pre-emphasis
+    pre_emphasis_tc: "750us" # Time constant for North America
+
+# Audio Levels (adjust for your specific radio)
+audio_calibration:
+  # RX Audio Levels
+  rx_discriminator_level: 600      # mV peak-to-peak
+  rx_audio_target: 2000            # ADC value target (0-4095)
+  rx_audio_min: 500                # Minimum acceptable level
+  rx_audio_max: 3500               # Maximum before clipping
+
+  # TX Audio Levels
+  tx_mic_level: 300                # mV peak-to-peak
+  tx_audio_target: 128             # DAC value target (0-255)
+  tx_deviation_target: 3000        # Hz (±3kHz for 12.5kHz)
+  tx_deviation_max: 4000           # Maximum deviation (Hz)
+
+# PTT Timing
+ptt:
+  pre_delay_ms: 50          # Delay before audio starts
+  post_delay_ms: 100        # Delay after audio stops
+  tail_time_ms: 200         # Minimum PTT time
+  timeout_sec: 180          # Maximum transmit time (3 minutes)
+  activation_time_us: 100   # Time to activate PTT
+
+# COS/Squelch Configuration
+cos:
+  detection_delay_ms: 50    # Debounce delay
+  release_delay_ms: 200     # Squelch tail
+  polarity: "LOW"           # Active low
+  type: "HARDWARE"          # Hardware squelch from radio
+
+# VOX Configuration (if COS not available)
+vox:
+  enabled: false            # Disable if using COS
+  threshold: 500            # Audio level threshold
+  hang_time_ms: 1000        # Time to keep PTT active after audio stops
+  attack_time_ms: 10        # Time to activate PTT
+  release_time_ms: 200      # Time to deactivate PTT
+
+# Connector Pinout (Motorola 16-pin accessory connector)
+connector:
+  type: "Motorola 16-pin Accessory"
+
+  pinout:
+    # Audio Pins
+    pin_1: "PTT (Ground to transmit)"
+    pin_2: "Ground"
+    pin_3: "Discriminator Audio Output (RX)"
+    pin_4: "Not Used"
+    pin_5: "Microphone Audio Input (TX)"
+    pin_6: "Ground"
+    pin_7: "Squelch/COS Output (Active LOW)"
+    pin_8: "Not Used"
+    pin_9: "+5V Output (max 50mA)"
+    pin_10: "Not Used"
+    pin_11: "External Speaker Audio (RX)"
+    pin_12: "Ground"
+    pin_13: "Not Used"
+    pin_14: "+13.8V (vehicle power)"
+    pin_15: "Ground"
+    pin_16: "Not Used"
+
+# Wiring to ESP32
+wiring:
+  connections:
+    - radio_pin: "Pin 3 (Discriminator)"
+      esp32_pin: "GPIO36 (ADC1_CH0)"
+      description: "RX audio input via 10kΩ resistor and 10µF cap"
+
+    - radio_pin: "Pin 5 (Mic Input)"
+      esp32_pin: "GPIO25 (DAC1)"
+      description: "TX audio output via 10kΩ resistor and 10µF cap"
+
+    - radio_pin: "Pin 1 (PTT)"
+      esp32_pin: "GPIO32"
+      description: "PTT control via 2N7000 MOSFET or optocoupler"
+
+    - radio_pin: "Pin 7 (Squelch)"
+      esp32_pin: "GPIO33"
+      description: "COS input via 10kΩ resistor (optional 4.7kΩ pullup)"
+
+    - radio_pin: "Pin 2, 6, 12, 15"
+      esp32_pin: "GND"
+      description: "Common ground connection"
+
+# Required External Components
+external_components:
+  # Audio Coupling
+  - name: "RX Audio Coupling"
+    parts:
+      - "10µF electrolytic capacitor (16V)"
+      - "10kΩ resistor"
+    description: "AC couples discriminator audio to ESP32 ADC"
+
+  - name: "TX Audio Coupling"
+    parts:
+      - "10µF electrolytic capacitor (16V)"
+      - "10kΩ resistor"
+    description: "AC couples ESP32 DAC to microphone input"
+
+  # PTT Isolation
+  - name: "PTT Driver"
+    parts:
+      - "2N7000 N-channel MOSFET"
+      - "10kΩ resistor (gate)"
+      - "100kΩ resistor (pull-up)"
+    description: "Isolates ESP32 from PTT line"
+    alternative: "4N35 optocoupler with 1kΩ resistor"
+
+  # COS Input Protection
+  - name: "COS Protection"
+    parts:
+      - "10kΩ resistor"
+    description: "Current limiting for COS input"
+    optional:
+      - "4.7kΩ pull-up to 3.3V if needed"
+
+# Channel Configuration
+channel:
+  spacing: "12.5kHz"        # or "25kHz" for wideband
+  frequency_range: "136-174MHz" # VHF (varies by model)
+  modulation: "FM"
+  power: "1-45W"            # Varies by model
+
+# Performance Specifications
+performance:
+  audio_bandwidth: "300-3000Hz"
+  sensitivity: "-119dBm"    # Typical 12dB SINAD
+  selectivity_adj: "-65dB"  # Adjacent channel
+  selectivity_alt: "-75dB"  # Alternate channel
+  spurious: "-70dB"
+  audio_distortion: "<3%"   # THD
+  frequency_stability: "±2.5ppm"
+
+# Notes and Best Practices
+notes:
+  - "Use discriminator audio (Pin 3) for best audio quality"
+  - "Do NOT use speaker audio for RX - too much processing"
+  - "Adjust TX audio level to achieve proper deviation (±3kHz for 12.5kHz)"
+  - "Monitor deviation with service monitor during initial setup"
+  - "PTT must be isolated - use MOSFET or optocoupler"
+  - "Ground ESP32 to radio chassis for best audio quality"
+  - "Keep audio cables short and shielded to minimize noise"
+  - "Test with radio programming software to verify settings"
+  - "Some models may require different pinouts - verify with service manual"
+
+# Calibration Procedure
+calibration:
+  steps:
+    - "Connect ESP32 to radio as per wiring diagram"
+    - "Set radio to test frequency"
+    - "Run audio-test.ino to verify audio path"
+    - "Adjust RX gain if needed (typically 0dB)"
+    - "Transmit test signal and monitor deviation"
+    - "Adjust TX level to achieve ±3kHz deviation"
+    - "Test PTT activation with ptt-test.ino"
+    - "Verify COS detection with cos-test.ino"
+    - "Run end-to-end test with e2e-validation.ino"
+
+# Troubleshooting
+troubleshooting:
+  no_rx_audio:
+    - "Check discriminator pin connection"
+    - "Verify AC coupling capacitor polarity"
+    - "Check ESP32 ADC reading (should show activity)"
+    - "Ensure radio squelch is open"
+
+  no_tx_audio:
+    - "Check microphone pin connection"
+    - "Verify AC coupling capacitor polarity"
+    - "Monitor deviation with service monitor"
+    - "Increase TX audio level if deviation too low"
+
+  ptt_not_working:
+    - "Check PTT pin wiring"
+    - "Verify MOSFET/optocoupler operation"
+    - "Ensure PTT pin goes LOW when transmitting"
+    - "Check for proper ground connection"
+
+  cos_not_working:
+    - "Verify COS pin connection"
+    - "Check COS polarity setting"
+    - "Use VOX mode as alternative"
+    - "Some radios require programming to enable COS output"
+
+# References
+references:
+  - "Motorola GM300 Service Manual"
+  - "Motorola CDM Series Service Manual"
+  - "Motorola Accessory Connector Pinout Guide"
+  - "ESP32 RoIP Hardware Validation Guide"

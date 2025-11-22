@@ -1,0 +1,651 @@
+name: Performance Testing
+
+on:
+  schedule:
+    # Run weekly performance tests on Sunday at 3:00 AM UTC
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Type of performance test to run'
+        required: true
+        type: choice
+        options:
+          - all
+          - load
+          - stress
+          - spike
+          - soak
+        default: 'all'
+      duration:
+        description: 'Test duration in seconds (for custom runs)'
+        required: false
+        default: '300'
+      connections:
+        description: 'Number of concurrent connections'
+        required: false
+        default: '100'
+
+env:
+  NODE_VERSION: '20.x'
+  PERFORMANCE_THRESHOLD_P95: 200  # P95 latency threshold in ms
+  PERFORMANCE_THRESHOLD_RPS: 500  # Minimum requests per second
+
+jobs:
+  # ============================================================
+  # Setup Test Environment
+  # ============================================================
+  setup:
+    name: Setup Performance Test Environment
+    runs-on: ubuntu-latest
+    outputs:
+      test_type: ${{ steps.config.outputs.test_type }}
+
+    steps:
+      - name: Configure test parameters
+        id: config
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "test_type=${{ github.event.inputs.test_type }}" >> $GITHUB_OUTPUT
+          else
+            echo "test_type=all" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Display test configuration
+        run: |
+          echo "Performance Test Configuration"
+          echo "=============================="
+          echo "Test Type: ${{ steps.config.outputs.test_type }}"
+          echo "Duration: ${{ github.event.inputs.duration || '300' }}s"
+          echo "Connections: ${{ github.event.inputs.connections || '100' }}"
+
+  # ============================================================
+  # Autocannon Benchmark Tests
+  # ============================================================
+  autocannon-benchmark:
+    name: Autocannon Performance Benchmark
+    runs-on: ubuntu-latest
+    needs: setup
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: roip_perf
+          POSTGRES_USER: roip_test
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: roip-server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: roip-server
+        run: npm ci
+
+      - name: Start server
+        working-directory: roip-server
+        run: |
+          npm start &
+          echo $! > /tmp/server.pid
+          sleep 15
+        env:
+          NODE_ENV: production
+          DB_TYPE: postgresql
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: roip_perf
+          DB_USER: roip_test
+          DB_PASSWORD: test_password
+          JWT_SECRET: test-secret-key
+
+      - name: Wait for server to be ready
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:8080/health; do sleep 2; done'
+
+      - name: Run Autocannon benchmark
+        working-directory: roip-server
+        run: |
+          DURATION=${{ github.event.inputs.duration || '300' }} \
+          CONNECTIONS=${{ github.event.inputs.connections || '100' }} \
+          node scripts/benchmark.js
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f /tmp/server.pid ]; then
+            kill $(cat /tmp/server.pid) || true
+          fi
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: autocannon-results
+          path: |
+            roip-server/benchmark-results.json
+            roip-server/benchmark-report.html
+          retention-days: 90
+
+  # ============================================================
+  # K6 Load Testing
+  # ============================================================
+  k6-load-test:
+    name: K6 Load Testing
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.test_type == 'all' || needs.setup.outputs.test_type == 'load'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: roip_perf
+          POSTGRES_USER: roip_test
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: roip-server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: roip-server
+        run: npm ci
+
+      - name: Start server
+        working-directory: roip-server
+        run: |
+          npm start &
+          echo $! > /tmp/server.pid
+          sleep 15
+        env:
+          NODE_ENV: production
+          DB_TYPE: postgresql
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: roip_perf
+          DB_USER: roip_test
+          DB_PASSWORD: test_password
+          JWT_SECRET: test-secret-key
+
+      - name: Wait for server to be ready
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:8080/health; do sleep 2; done'
+
+      - name: Create K6 load test script
+        run: |
+          mkdir -p k6-tests
+          cat > k6-tests/load-test.js << 'EOF'
+          import http from 'k6/http';
+          import { check, sleep } from 'k6';
+          import { Rate, Trend, Counter } from 'k6/metrics';
+
+          const errorRate = new Rate('errors');
+          const latency = new Trend('latency');
+          const requests = new Counter('requests');
+
+          export const options = {
+            stages: [
+              { duration: '2m', target: 50 },   // Ramp up to 50 users
+              { duration: '5m', target: 100 },  // Stay at 100 users
+              { duration: '2m', target: 200 },  // Spike to 200 users
+              { duration: '3m', target: 100 },  // Back to 100 users
+              { duration: '2m', target: 0 },    // Ramp down
+            ],
+            thresholds: {
+              'http_req_duration': ['p(95)<500'],  // 95% of requests under 500ms
+              'http_req_failed': ['rate<0.1'],      // Less than 10% errors
+              'errors': ['rate<0.05'],              // Less than 5% application errors
+            },
+          };
+
+          const BASE_URL = 'http://localhost:8080';
+
+          export default function () {
+            const scenarios = [
+              () => testHealthEndpoint(),
+              () => testApiStatus(),
+              () => testMetrics(),
+            ];
+
+            const scenario = scenarios[Math.floor(Math.random() * scenarios.length)];
+            scenario();
+            sleep(1);
+          }
+
+          function testHealthEndpoint() {
+            const res = http.get(`${BASE_URL}/health`);
+            const success = check(res, {
+              'health status is 200': (r) => r.status === 200,
+              'health response time < 100ms': (r) => r.timings.duration < 100,
+            });
+
+            errorRate.add(!success);
+            latency.add(res.timings.duration);
+            requests.add(1);
+          }
+
+          function testApiStatus() {
+            const res = http.get(`${BASE_URL}/api/status`);
+            const success = check(res, {
+              'status is 200': (r) => r.status === 200,
+              'has valid response': (r) => r.body && r.body.length > 0,
+            });
+
+            errorRate.add(!success);
+            latency.add(res.timings.duration);
+            requests.add(1);
+          }
+
+          function testMetrics() {
+            const res = http.get(`${BASE_URL}/metrics`);
+            const success = check(res, {
+              'metrics status is 200': (r) => r.status === 200,
+            });
+
+            errorRate.add(!success);
+            latency.add(res.timings.duration);
+            requests.add(1);
+          }
+
+          export function handleSummary(data) {
+            return {
+              'k6-summary.json': JSON.stringify(data),
+              'k6-summary.html': htmlReport(data),
+            };
+          }
+
+          function htmlReport(data) {
+            return `
+              <!DOCTYPE html>
+              <html>
+              <head>
+                <title>K6 Load Test Report</title>
+                <style>
+                  body { font-family: Arial, sans-serif; margin: 20px; }
+                  h1 { color: #333; }
+                  table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+                  th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                  th { background-color: #4CAF50; color: white; }
+                  .pass { color: green; }
+                  .fail { color: red; }
+                </style>
+              </head>
+              <body>
+                <h1>K6 Load Test Results</h1>
+                <h2>Summary</h2>
+                <p>Test Duration: ${data.state.testRunDurationMs / 1000}s</p>
+                <p>Total Requests: ${data.metrics.requests ? data.metrics.requests.values.count : 'N/A'}</p>
+                <p>Error Rate: ${(data.metrics.errors ? data.metrics.errors.values.rate * 100 : 0).toFixed(2)}%</p>
+                <p>P95 Latency: ${data.metrics.http_req_duration ? data.metrics.http_req_duration.values['p(95)'].toFixed(2) : 'N/A'}ms</p>
+              </body>
+              </html>
+            `;
+          }
+          EOF
+
+      - name: Run K6 load test
+        uses: grafana/k6-action@v0.3.1
+        with:
+          filename: k6-tests/load-test.js
+          flags: --out json=k6-results.json
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f /tmp/server.pid ]; then
+            kill $(cat /tmp/server.pid) || true
+          fi
+
+      - name: Upload K6 results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-load-test-results
+          path: |
+            k6-summary.json
+            k6-summary.html
+            k6-results.json
+          retention-days: 90
+
+  # ============================================================
+  # K6 Stress Testing
+  # ============================================================
+  k6-stress-test:
+    name: K6 Stress Testing
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.test_type == 'all' || needs.setup.outputs.test_type == 'stress'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: roip_perf
+          POSTGRES_USER: roip_test
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: roip-server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: roip-server
+        run: npm ci
+
+      - name: Start server
+        working-directory: roip-server
+        run: |
+          npm start &
+          echo $! > /tmp/server.pid
+          sleep 15
+        env:
+          NODE_ENV: production
+          DB_TYPE: postgresql
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: roip_perf
+          DB_USER: roip_test
+          DB_PASSWORD: test_password
+          JWT_SECRET: test-secret-key
+
+      - name: Wait for server to be ready
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:8080/health; do sleep 2; done'
+
+      - name: Create K6 stress test script
+        run: |
+          mkdir -p k6-tests
+          cat > k6-tests/stress-test.js << 'EOF'
+          import http from 'k6/http';
+          import { check, sleep } from 'k6';
+
+          export const options = {
+            stages: [
+              { duration: '1m', target: 100 },   // Warm up
+              { duration: '3m', target: 200 },   // Increase load
+              { duration: '3m', target: 400 },   // Heavy load
+              { duration: '3m', target: 600 },   // Stress point
+              { duration: '2m', target: 0 },     // Recovery
+            ],
+          };
+
+          export default function () {
+            const res = http.get('http://localhost:8080/health');
+            check(res, { 'status is 200': (r) => r.status === 200 });
+            sleep(0.5);
+          }
+          EOF
+
+      - name: Run K6 stress test
+        uses: grafana/k6-action@v0.3.1
+        with:
+          filename: k6-tests/stress-test.js
+          flags: --out json=k6-stress-results.json
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f /tmp/server.pid ]; then
+            kill $(cat /tmp/server.pid) || true
+          fi
+
+      - name: Upload K6 stress test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-stress-test-results
+          path: k6-stress-results.json
+          retention-days: 90
+
+  # ============================================================
+  # Performance Regression Testing
+  # ============================================================
+  performance-regression:
+    name: Performance Regression Analysis
+    runs-on: ubuntu-latest
+    needs: [autocannon-benchmark, k6-load-test]
+    if: always()
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download current results
+        uses: actions/download-artifact@v4
+        with:
+          name: autocannon-results
+          path: current-results
+
+      - name: Download baseline results
+        continue-on-error: true
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          workflow: performance-test.yml
+          name: autocannon-results
+          path: baseline-results
+          if_no_artifact_found: ignore
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Compare performance metrics
+        run: |
+          node << 'EOF'
+          const fs = require('fs');
+          const path = require('path');
+
+          try {
+            // Load current results
+            const currentFile = 'current-results/benchmark-results.json';
+            const current = JSON.parse(fs.readFileSync(currentFile, 'utf8'));
+
+            console.log('Performance Regression Analysis');
+            console.log('================================\n');
+
+            // Try to load baseline
+            let baseline = null;
+            try {
+              const baselineFile = 'baseline-results/benchmark-results.json';
+              baseline = JSON.parse(fs.readFileSync(baselineFile, 'utf8'));
+              console.log('Baseline found - comparing metrics\n');
+            } catch (e) {
+              console.log('No baseline found - establishing new baseline\n');
+            }
+
+            // Analyze current results
+            console.log('Current Performance Metrics:');
+            console.log('---------------------------');
+
+            Object.entries(current.benchmarks || {}).forEach(([name, metrics]) => {
+              console.log(`\n${name}:`);
+              console.log(`  Requests/sec: ${metrics.requestsPerSecond}`);
+              console.log(`  Avg Latency: ${metrics.latency.mean}ms`);
+              console.log(`  P95 Latency: ${metrics.latency.p95}ms`);
+              console.log(`  P99 Latency: ${metrics.latency.p99}ms`);
+
+              // Check against thresholds
+              if (metrics.latency.p95 > ${env.PERFORMANCE_THRESHOLD_P95}) {
+                console.log(`  ⚠️ WARNING: P95 latency exceeds threshold (${env.PERFORMANCE_THRESHOLD_P95}ms)`);
+                process.exitCode = 1;
+              }
+
+              if (metrics.requestsPerSecond < ${env.PERFORMANCE_THRESHOLD_RPS}) {
+                console.log(`  ⚠️ WARNING: RPS below threshold (${env.PERFORMANCE_THRESHOLD_RPS})`);
+                process.exitCode = 1;
+              }
+
+              // Compare with baseline if available
+              if (baseline && baseline.benchmarks && baseline.benchmarks[name]) {
+                const baselineMetrics = baseline.benchmarks[name];
+                const rpsChange = ((metrics.requestsPerSecond - baselineMetrics.requestsPerSecond) / baselineMetrics.requestsPerSecond * 100).toFixed(2);
+                const latencyChange = ((metrics.latency.mean - baselineMetrics.latency.mean) / baselineMetrics.latency.mean * 100).toFixed(2);
+
+                console.log(`\n  Comparison with baseline:`);
+                console.log(`  RPS change: ${rpsChange > 0 ? '+' : ''}${rpsChange}%`);
+                console.log(`  Latency change: ${latencyChange > 0 ? '+' : ''}${latencyChange}%`);
+
+                // Regression detection
+                if (parseFloat(rpsChange) < -10) {
+                  console.log(`  🚨 REGRESSION: RPS decreased by more than 10%`);
+                  process.exitCode = 1;
+                }
+
+                if (parseFloat(latencyChange) > 20) {
+                  console.log(`  🚨 REGRESSION: Latency increased by more than 20%`);
+                  process.exitCode = 1;
+                }
+              }
+            });
+
+            console.log('\n================================');
+            if (process.exitCode === 1) {
+              console.log('❌ Performance regression detected or thresholds exceeded');
+            } else {
+              console.log('✅ Performance within acceptable parameters');
+            }
+
+          } catch (error) {
+            console.error('Error analyzing performance:', error);
+            process.exit(1);
+          }
+          EOF
+
+      - name: Generate performance report
+        if: always()
+        run: |
+          echo "# Performance Test Report" > performance-report.md
+          echo "" >> performance-report.md
+          echo "**Date:** $(date)" >> performance-report.md
+          echo "**Commit:** ${{ github.sha }}" >> performance-report.md
+          echo "**Branch:** ${{ github.ref_name }}" >> performance-report.md
+          echo "" >> performance-report.md
+          echo "## Test Results" >> performance-report.md
+          echo "" >> performance-report.md
+          echo "See attached artifacts for detailed results" >> performance-report.md
+
+      - name: Upload performance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-report
+          path: performance-report.md
+          retention-days: 90
+
+  # ============================================================
+  # Performance Test Summary
+  # ============================================================
+  performance-summary:
+    name: Performance Test Summary
+    runs-on: ubuntu-latest
+    needs: [autocannon-benchmark, k6-load-test, k6-stress-test, performance-regression]
+    if: always()
+
+    steps:
+      - name: Generate summary
+        run: |
+          echo "# 📊 Performance Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Event:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "## Test Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Test Suite | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.autocannon-benchmark.result }}" == "success" ]; then
+            echo "| Autocannon Benchmark | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Autocannon Benchmark | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.k6-load-test.result }}" == "success" ]; then
+            echo "| K6 Load Test | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.k6-load-test.result }}" == "skipped" ]; then
+            echo "| K6 Load Test | ⏭️  Skipped |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| K6 Load Test | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.k6-stress-test.result }}" == "success" ]; then
+            echo "| K6 Stress Test | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.k6-stress-test.result }}" == "skipped" ]; then
+            echo "| K6 Stress Test | ⏭️  Skipped |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| K6 Stress Test | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.performance-regression.result }}" == "success" ]; then
+            echo "| Regression Analysis | ✅ No Regression |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Regression Analysis | ⚠️  Review Required |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Performance Thresholds" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **P95 Latency:** < ${{ env.PERFORMANCE_THRESHOLD_P95 }}ms" >> $GITHUB_STEP_SUMMARY
+          echo "- **Requests/sec:** > ${{ env.PERFORMANCE_THRESHOLD_RPS }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Error Rate:** < 1%" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Autocannon benchmark results" >> $GITHUB_STEP_SUMMARY
+          echo "- K6 load test results (JSON + HTML)" >> $GITHUB_STEP_SUMMARY
+          echo "- K6 stress test results" >> $GITHUB_STEP_SUMMARY
+          echo "- Performance regression analysis" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check overall status
+        run: |
+          if [ "${{ needs.performance-regression.result }}" == "failure" ]; then
+            echo "⚠️ Performance regression detected - review required"
+            exit 1
+          fi
+
+          echo "✅ Performance tests completed"

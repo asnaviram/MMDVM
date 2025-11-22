@@ -1,0 +1,196 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: roip-server
+  namespace: roip-production
+  labels:
+    app: roip-server
+    environment: production
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: roip-server
+  template:
+    metadata:
+      labels:
+        app: roip-server
+        environment: production
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - roip-server
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: roip-server
+          image: roip-server:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: api
+              protocol: TCP
+            - containerPort: 8081
+              name: websocket
+              protocol: TCP
+            - containerPort: 5060
+              name: sip
+              protocol: UDP
+            - containerPort: 9090
+              name: metrics
+              protocol: TCP
+          env:
+            - name: NODE_ENV
+              valueFrom:
+                configMapKeyRef:
+                  name: roip-config
+                  key: NODE_ENV
+            - name: API_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: roip-config
+                  key: API_PORT
+            - name: WEBSOCKET_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: roip-config
+                  key: WEBSOCKET_PORT
+            - name: DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: roip-config
+                  key: DB_HOST
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: roip-config
+                  key: DB_PORT
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: roip-config
+                  key: DB_NAME
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: roip-secrets
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: roip-secrets
+                  key: DB_PASSWORD
+            - name: REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: roip-config
+                  key: REDIS_HOST
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: roip-secrets
+                  key: JWT_SECRET
+            - name: TURN_SERVER
+              valueFrom:
+                configMapKeyRef:
+                  name: roip-config
+                  key: TURN_SERVER
+            - name: TURN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: roip-secrets
+                  key: TURN_USERNAME
+            - name: TURN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: roip-secrets
+                  key: TURN_PASSWORD
+          resources:
+            requests:
+              memory: "2Gi"
+              cpu: "1000m"
+            limits:
+              memory: "4Gi"
+              cpu: "2000m"
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          startupProbe:
+            httpGet:
+              path: /health/startup
+              port: 8080
+            initialDelaySeconds: 0
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 30
+          volumeMounts:
+            - name: data
+              mountPath: /app/data
+            - name: logs
+              mountPath: /app/logs
+            - name: recordings
+              mountPath: /app/recordings
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: roip-data-pvc
+        - name: logs
+          emptyDir: {}
+        - name: recordings
+          persistentVolumeClaim:
+            claimName: roip-recordings-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: roip-data-pvc
+  namespace: roip-production
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: "fast-ssd"
+  resources:
+    requests:
+      storage: 50Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: roip-recordings-pvc
+  namespace: roip-production
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: "standard"
+  resources:
+    requests:
+      storage: 500Gi

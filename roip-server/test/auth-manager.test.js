@@ -13,10 +13,10 @@ describe('Auth Manager Tests', () => {
 
   beforeEach(() => {
     authManager = new AuthManager({
-      jwtSecret: 'test-secret-key',
+      jwtSecret: 'sMJRViY5CsmsVQKFKWGOwrvGmNCvqaXEiKu+kGYF8wg=',
       jwtExpiry: '24h',
       jwtRefreshExpiry: '7d',
-      bcryptRounds: 10,
+      bcryptRounds: 4,  // Lower for faster tests
       sessionTimeout: 3600000
     });
   });
@@ -144,13 +144,13 @@ describe('Auth Manager Tests', () => {
     });
 
     test('should emit password changed event', (done) => {
-      authManager.registerUser('passEvent', 'oldpass').then((user) => {
+      authManager.registerUser('passEvent', 'oldpass123').then((user) => {
         authManager.on('user:password_changed', ({ userId }) => {
           expect(userId).toBe(user.userId);
           done();
         });
 
-        authManager.changePassword(user.userId, 'oldpass', 'newpass123');
+        authManager.changePassword(user.userId, 'oldpass123', 'newpass456');
       });
     });
   });

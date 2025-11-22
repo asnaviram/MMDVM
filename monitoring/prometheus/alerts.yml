@@ -1,0 +1,510 @@
+# Prometheus Alerting Rules for ESP32 RoIP System
+# Comprehensive alerts for system health, performance, and business metrics
+
+groups:
+  # ==================== Infrastructure Alerts ====================
+  - name: infrastructure
+    interval: 30s
+    rules:
+      # High CPU Usage
+      - alert: HighCPUUsage
+        expr: (100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)) > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is above 80% (current: {{ $value | humanize }}%)"
+
+      - alert: CriticalCPUUsage
+        expr: (100 - (avg by (instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)) > 95
+        for: 2m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Critical CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is above 95% (current: {{ $value | humanize }}%)"
+
+      # High Memory Usage
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is above 80% (current: {{ $value | humanize }}%)"
+
+      - alert: CriticalMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 90
+        for: 2m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Critical memory usage on {{ $labels.instance }}"
+          description: "Memory usage is above 90% (current: {{ $value | humanize }}%)"
+
+      # Disk Space
+      - alert: LowDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 20
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Low disk space on {{ $labels.instance }}"
+          description: "Disk space is below 20% (current: {{ $value | humanize }}%)"
+
+      - alert: CriticalDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 10
+        for: 2m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Critical disk space on {{ $labels.instance }}"
+          description: "Disk space is below 10% (current: {{ $value | humanize }}%)"
+
+      # High Network Traffic
+      - alert: HighNetworkTraffic
+        expr: rate(node_network_receive_bytes_total[5m]) > 100000000  # 100 MB/s
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "High network traffic on {{ $labels.instance }}"
+          description: "Network receive rate is {{ $value | humanize }}B/s"
+
+  # ==================== Database Alerts ====================
+  - name: database
+    interval: 30s
+    rules:
+      # Database Connection Exhaustion
+      - alert: DatabaseConnectionsHigh
+        expr: pg_stat_database_numbackends / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "High database connections"
+          description: "Database connections at {{ $value | humanizePercentage }} of max"
+
+      - alert: DatabaseConnectionsCritical
+        expr: pg_stat_database_numbackends / pg_settings_max_connections > 0.95
+        for: 2m
+        labels:
+          severity: critical
+          category: database
+        annotations:
+          summary: "Critical database connections"
+          description: "Database connections at {{ $value | humanizePercentage }} of max"
+
+      # Slow Queries
+      - alert: SlowDatabaseQueries
+        expr: rate(pg_stat_database_blks_read[5m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "Slow database queries detected"
+          description: "High block read rate: {{ $value | humanize }} blocks/s"
+
+      # Database Down
+      - alert: DatabaseDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: database
+        annotations:
+          summary: "PostgreSQL database is down"
+          description: "Database has been down for 1 minute"
+
+      # High Transaction Rate
+      - alert: HighTransactionRate
+        expr: rate(pg_stat_database_xact_commit[5m]) + rate(pg_stat_database_xact_rollback[5m]) > 1000
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "High database transaction rate"
+          description: "Transaction rate is {{ $value | humanize }} tx/s"
+
+      # High Rollback Rate
+      - alert: HighRollbackRate
+        expr: rate(pg_stat_database_xact_rollback[5m]) / (rate(pg_stat_database_xact_commit[5m]) + rate(pg_stat_database_xact_rollback[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "High database rollback rate"
+          description: "Rollback rate is {{ $value | humanizePercentage }}"
+
+  # ==================== RTP/Audio Quality Alerts ====================
+  - name: rtp_audio
+    interval: 10s
+    rules:
+      # High Packet Loss
+      - alert: HighRTPPacketLoss
+        expr: rtp_packet_loss_percent > 5
+        for: 1m
+        labels:
+          severity: warning
+          category: audio_quality
+        annotations:
+          summary: "High RTP packet loss detected"
+          description: "Packet loss is {{ $value | humanize }}% on call {{ $labels.call_id }}"
+
+      - alert: CriticalRTPPacketLoss
+        expr: rtp_packet_loss_percent > 10
+        for: 30s
+        labels:
+          severity: critical
+          category: audio_quality
+        annotations:
+          summary: "Critical RTP packet loss detected"
+          description: "Packet loss is {{ $value | humanize }}% on call {{ $labels.call_id }}"
+
+      # High Jitter
+      - alert: HighRTPJitter
+        expr: rtp_jitter_ms > 30
+        for: 1m
+        labels:
+          severity: warning
+          category: audio_quality
+        annotations:
+          summary: "High RTP jitter detected"
+          description: "Jitter is {{ $value | humanize }}ms on call {{ $labels.call_id }}"
+
+      - alert: CriticalRTPJitter
+        expr: rtp_jitter_ms > 50
+        for: 30s
+        labels:
+          severity: critical
+          category: audio_quality
+        annotations:
+          summary: "Critical RTP jitter detected"
+          description: "Jitter is {{ $value | humanize }}ms on call {{ $labels.call_id }}"
+
+      # High Latency
+      - alert: HighRTPLatency
+        expr: rtp_latency_ms > 150
+        for: 1m
+        labels:
+          severity: warning
+          category: audio_quality
+        annotations:
+          summary: "High RTP latency detected"
+          description: "Latency is {{ $value | humanize }}ms on call {{ $labels.call_id }}"
+
+      - alert: CriticalRTPLatency
+        expr: rtp_latency_ms > 250
+        for: 30s
+        labels:
+          severity: critical
+          category: audio_quality
+        annotations:
+          summary: "Critical RTP latency detected"
+          description: "Latency is {{ $value | humanize }}ms on call {{ $labels.call_id }}"
+
+      # Audio Buffer Issues
+      - alert: RTPBufferUnderrun
+        expr: rate(rtp_buffer_underruns_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          category: audio_quality
+        annotations:
+          summary: "RTP buffer underruns detected"
+          description: "Buffer underrun rate: {{ $value | humanize }}/s"
+
+      - alert: RTPBufferOverflow
+        expr: rate(rtp_buffer_overflows_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          category: audio_quality
+        annotations:
+          summary: "RTP buffer overflows detected"
+          description: "Buffer overflow rate: {{ $value | humanize }}/s"
+
+  # ==================== SIP Signaling Alerts ====================
+  - name: sip_signaling
+    interval: 30s
+    rules:
+      # SIP Registration Failures
+      - alert: HighSIPRegistrationFailures
+        expr: rate(sip_registration_failures_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          category: sip
+        annotations:
+          summary: "High SIP registration failure rate"
+          description: "Registration failures: {{ $value | humanize }}/s"
+
+      # Call Setup Failures
+      - alert: HighCallSetupFailures
+        expr: rate(sip_call_setup_failures_total[5m]) / rate(sip_call_attempts_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          category: sip
+        annotations:
+          summary: "High call setup failure rate"
+          description: "Call setup failure rate: {{ $value | humanizePercentage }}"
+
+      - alert: CriticalCallSetupFailures
+        expr: rate(sip_call_setup_failures_total[5m]) / rate(sip_call_attempts_total[5m]) > 0.25
+        for: 1m
+        labels:
+          severity: critical
+          category: sip
+        annotations:
+          summary: "Critical call setup failure rate"
+          description: "Call setup failure rate: {{ $value | humanizePercentage }}"
+
+      # SIP Server Errors (5xx responses)
+      - alert: HighSIPServerErrors
+        expr: rate(sip_responses_total{code=~"5.."}[5m]) > 1
+        for: 2m
+        labels:
+          severity: warning
+          category: sip
+        annotations:
+          summary: "High SIP server error rate"
+          description: "SIP 5xx error rate: {{ $value | humanize }}/s"
+
+      # Active Registrations Drop
+      - alert: SIPRegistrationDrop
+        expr: (sip_active_registrations - sip_active_registrations offset 5m) < -10
+        for: 1m
+        labels:
+          severity: warning
+          category: sip
+        annotations:
+          summary: "Sudden drop in SIP registrations"
+          description: "Lost {{ $value | humanize }} registrations in 5 minutes"
+
+  # ==================== Application Alerts ====================
+  - name: application
+    interval: 30s
+    rules:
+      # Service Down
+      - alert: RoIPServerDown
+        expr: up{job="roip-server"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: application
+        annotations:
+          summary: "RoIP server is down"
+          description: "RoIP server has been down for 1 minute"
+
+      # High HTTP Error Rate
+      - alert: HighHTTPErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "High HTTP error rate"
+          description: "HTTP 5xx error rate: {{ $value | humanizePercentage }}"
+
+      # High Request Latency
+      - alert: HighAPILatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "High API latency"
+          description: "95th percentile latency: {{ $value | humanize }}s"
+
+      # WebSocket Connection Issues
+      - alert: HighWebSocketDisconnections
+        expr: rate(websocket_disconnections_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "High WebSocket disconnection rate"
+          description: "WebSocket disconnection rate: {{ $value | humanize }}/s"
+
+      # Node.js Event Loop Lag
+      - alert: HighEventLoopLag
+        expr: nodejs_eventloop_lag_seconds > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "High Node.js event loop lag"
+          description: "Event loop lag: {{ $value | humanize }}s"
+
+      # Heap Memory Issues
+      - alert: HighHeapUsage
+        expr: nodejs_heap_size_used_bytes / nodejs_heap_size_total_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          category: application
+        annotations:
+          summary: "High Node.js heap usage"
+          description: "Heap usage: {{ $value | humanizePercentage }}"
+
+  # ==================== Business Metrics Alerts ====================
+  - name: business_metrics
+    interval: 60s
+    rules:
+      # No Active Devices
+      - alert: NoActiveDevices
+        expr: active_devices_total == 0
+        for: 5m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "No active devices registered"
+          description: "No ESP32 devices are currently active"
+
+      # Low Device Count
+      - alert: LowDeviceCount
+        expr: active_devices_total < 3
+        for: 10m
+        labels:
+          severity: info
+          category: business
+        annotations:
+          summary: "Low active device count"
+          description: "Only {{ $value }} devices are active"
+
+      # High Concurrent Calls
+      - alert: HighConcurrentCalls
+        expr: active_calls_total > 100
+        for: 5m
+        labels:
+          severity: info
+          category: business
+        annotations:
+          summary: "High concurrent call count"
+          description: "{{ $value }} concurrent calls active"
+
+      # Call Duration Anomaly
+      - alert: AbnormalCallDuration
+        expr: avg(call_duration_seconds) > 3600  # 1 hour
+        for: 5m
+        labels:
+          severity: info
+          category: business
+        annotations:
+          summary: "Abnormally long call duration detected"
+          description: "Average call duration: {{ $value | humanizeDuration }}"
+
+  # ==================== Security Alerts ====================
+  - name: security
+    interval: 30s
+    rules:
+      # Authentication Failures
+      - alert: HighAuthenticationFailures
+        expr: rate(auth_failures_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "High authentication failure rate"
+          description: "Auth failure rate: {{ $value | humanize }}/s from {{ $labels.source_ip }}"
+
+      # Brute Force Attack
+      - alert: PossibleBruteForceAttack
+        expr: rate(auth_failures_total{source_ip!=""}[1m]) > 5
+        for: 1m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Possible brute force attack"
+          description: "{{ $value | humanize }} auth failures/s from {{ $labels.source_ip }}"
+
+      # Rate Limit Exceeded
+      - alert: RateLimitExceeded
+        expr: rate(rate_limit_exceeded_total[5m]) > 50
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "High rate limit violations"
+          description: "Rate limit exceeded {{ $value | humanize }} times/s"
+
+      # Invalid SIP Messages
+      - alert: InvalidSIPMessages
+        expr: rate(sip_invalid_messages_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "High rate of invalid SIP messages"
+          description: "Invalid SIP message rate: {{ $value | humanize }}/s"
+
+      # TLS Certificate Expiry
+      - alert: TLSCertificateExpiringSoon
+        expr: (ssl_certificate_expiry_seconds - time()) < 604800  # 7 days
+        for: 1h
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "TLS certificate expiring soon"
+          description: "Certificate expires in {{ $value | humanizeDuration }}"
+
+  # ==================== Health Check Alerts ====================
+  - name: health_checks
+    interval: 30s
+    rules:
+      # HTTP Health Check Failed
+      - alert: HTTPHealthCheckFailed
+        expr: probe_success{job="blackbox-http"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: health
+        annotations:
+          summary: "HTTP health check failed"
+          description: "Health check failed for {{ $labels.instance }}"
+
+      # SIP Port Unreachable
+      - alert: SIPPortUnreachable
+        expr: probe_success{job="blackbox-udp"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: health
+        annotations:
+          summary: "SIP port unreachable"
+          description: "SIP port {{ $labels.instance }} is not responding"
+
+      # High Health Check Latency
+      - alert: HighHealthCheckLatency
+        expr: probe_duration_seconds > 5
+        for: 2m
+        labels:
+          severity: warning
+          category: health
+        annotations:
+          summary: "High health check latency"
+          description: "Health check latency: {{ $value | humanize }}s for {{ $labels.instance }}"

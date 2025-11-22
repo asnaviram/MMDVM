@@ -1,0 +1,17 @@
+# Grafana Dashboards Provisioning
+# Automatically load dashboards on Grafana startup
+
+apiVersion: 1
+
+providers:
+  - name: 'RoIP Dashboards'
+    orgId: 1
+    folder: 'RoIP Monitoring'
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
+      foldersFromFilesStructure: true

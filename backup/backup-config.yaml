@@ -1,0 +1,276 @@
+# Backup Configuration for ESP32 RoIP System
+# This file defines backup settings, schedules, and retention policies
+
+backup:
+  # Base backup directory
+  base_dir: /var/backups/roip
+
+  # Temporary backup staging directory
+  staging_dir: /tmp/roip-backup-staging
+
+  # Backup naming convention
+  naming:
+    prefix: roip-backup
+    timestamp_format: "%Y%m%d-%H%M%S"
+
+  # Backup types and their settings
+  types:
+    database:
+      enabled: true
+      dir: database
+      compression: gzip
+      encryption: true
+
+    config:
+      enabled: true
+      dir: config
+      compression: gzip
+      encryption: true
+      files:
+        - /home/user/MMDVM/roip-server/config/*.yaml
+        - /home/user/MMDVM/roip-server/.env
+        - /home/user/MMDVM/deployment/**/*.yaml
+
+    logs:
+      enabled: true
+      dir: logs
+      compression: gzip
+      encryption: false
+      max_age_days: 30
+      paths:
+        - /var/log/roip/*.log
+        - /home/user/MMDVM/roip-server/logs/*.log
+
+    firmware:
+      enabled: true
+      dir: firmware
+      compression: gzip
+      encryption: false
+      paths:
+        - /home/user/MMDVM/.pio/build/*/*.bin
+        - /home/user/MMDVM/.pio/build/*/*.elf
+        - /home/user/MMDVM/roip-firmware/build/*.bin
+
+    certificates:
+      enabled: true
+      dir: certificates
+      compression: gzip
+      encryption: true
+      paths:
+        - /etc/letsencrypt/live/**/*
+        - /home/user/MMDVM/roip-server/certs/**/*
+        - /home/user/MMDVM/security/**/*.pem
+        - /home/user/MMDVM/security/**/*.key
+
+  # Backup schedule (cron format)
+  schedule:
+    # Full backup every day at 2 AM
+    full: "0 2 * * *"
+    # Incremental database backup every 6 hours
+    database: "0 */6 * * *"
+    # Config backup on changes or daily at 3 AM
+    config: "0 3 * * *"
+    # Log backup daily at 4 AM
+    logs: "0 4 * * *"
+    # Firmware backup weekly on Sunday at 5 AM
+    firmware: "0 5 * * 0"
+    # Certificate backup daily at 6 AM
+    certificates: "0 6 * * *"
+
+  # Compression settings
+  compression:
+    algorithm: gzip
+    level: 6  # 1-9, higher = better compression but slower
+
+  # Encryption settings
+  encryption:
+    enabled: true
+    algorithm: aes-256-cbc
+    # Key should be stored in secure location (env var or secrets manager)
+    key_file: /etc/roip/backup-encryption-key
+
+# Retention policies
+retention:
+  # Keep full backups
+  full:
+    daily: 7      # Keep 7 daily backups
+    weekly: 4     # Keep 4 weekly backups
+    monthly: 12   # Keep 12 monthly backups
+    yearly: 3     # Keep 3 yearly backups
+
+  # Keep incremental backups
+  incremental:
+    hourly: 24    # Keep 24 hourly backups
+    daily: 7      # Keep 7 daily backups
+
+  # Database-specific retention
+  database:
+    point_in_time: 7  # Days of point-in-time recovery
+    transaction_logs: 14  # Days to keep transaction logs
+
+  # Log retention
+  logs:
+    days: 30      # Keep logs for 30 days
+
+# Off-site backup configuration
+offsite:
+  enabled: true
+
+  # Primary off-site location
+  primary:
+    type: s3
+    bucket: roip-backups
+    region: us-east-1
+    endpoint: https://s3.amazonaws.com
+    prefix: production/
+    encryption: AES256
+    storage_class: STANDARD_IA
+
+  # Secondary off-site location (optional)
+  secondary:
+    type: s3
+    bucket: roip-backups-dr
+    region: us-west-2
+    endpoint: https://s3.us-west-2.amazonaws.com
+    prefix: production/
+    encryption: AES256
+    storage_class: GLACIER
+
+  # Alternative: Azure Blob Storage
+  # primary:
+  #   type: azure
+  #   container: roip-backups
+  #   account: roipbackups
+  #
+  # Alternative: Google Cloud Storage
+  # primary:
+  #   type: gcs
+  #   bucket: roip-backups
+  #   project: roip-project
+
+  # Upload settings
+  upload:
+    parallel_transfers: 4
+    retry_attempts: 3
+    retry_delay: 5
+    verify_upload: true
+
+# Backup verification
+verification:
+  enabled: true
+
+  # Verify backups after creation
+  post_backup:
+    checksum: true
+    test_restore: false  # Can be slow, enable for critical backups
+
+  # Regular verification schedule
+  schedule: "0 7 * * *"  # Daily at 7 AM
+
+  # Verification checks
+  checks:
+    - checksum_integrity
+    - file_completeness
+    - compression_integrity
+    - encryption_integrity
+
+  # Test restore settings
+  test_restore:
+    enabled: true
+    schedule: "0 8 * * 0"  # Weekly on Sunday at 8 AM
+    restore_to: /tmp/roip-restore-test
+    cleanup_after: true
+
+# Monitoring and alerting
+monitoring:
+  enabled: true
+
+  # Alert on backup failures
+  alerts:
+    enabled: true
+    methods:
+      - email
+      - webhook
+      - slack
+
+  # Email settings
+  email:
+    from: backups@roip.local
+    to:
+      - admin@roip.local
+      - ops@roip.local
+    smtp:
+      host: localhost
+      port: 25
+
+  # Webhook settings
+  webhook:
+    url: https://hooks.roip.local/backup-alerts
+    timeout: 10
+
+  # Slack settings
+  slack:
+    webhook_url: https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+    channel: "#roip-alerts"
+
+  # Metrics to track
+  metrics:
+    - backup_duration
+    - backup_size
+    - backup_success_rate
+    - restore_test_success_rate
+    - storage_usage
+
+# Disaster recovery settings
+disaster_recovery:
+  # Recovery Time Objective (RTO)
+  rto_target: 4h  # Target time to restore service
+
+  # Recovery Point Objective (RPO)
+  rpo_target: 15m  # Maximum acceptable data loss
+
+  # Priority order for restoration
+  restore_priority:
+    - database
+    - certificates
+    - config
+    - firmware
+    - logs
+
+  # Multi-region failover
+  failover:
+    enabled: true
+    regions:
+      primary: us-east-1
+      secondary: us-west-2
+      tertiary: eu-west-1
+
+  # Database replication
+  replication:
+    enabled: true
+    type: async  # async or sync
+    replicas: 2
+    lag_threshold: 60s  # Alert if replication lag exceeds this
+
+  # Automated failover
+  auto_failover:
+    enabled: false  # Manual failover by default
+    health_check_interval: 30s
+    failure_threshold: 3
+
+# Backup cleanup
+cleanup:
+  enabled: true
+
+  # Run cleanup after backups
+  post_backup: true
+
+  # Regular cleanup schedule
+  schedule: "0 9 * * *"  # Daily at 9 AM
+
+  # What to clean
+  targets:
+    - expired_backups
+    - incomplete_backups
+    - temporary_files
+    - old_logs

@@ -1,0 +1,306 @@
+# ESP32 RoIP Server - Development Configuration
+# Local development with debug features and relaxed security
+# All settings can be overridden via environment variables
+
+server:
+  name: "ESP32 RoIP Server (Development)"
+  version: "1.0.0-dev"
+
+  # Server binding
+  host: "0.0.0.0"
+
+  # SIP settings
+  sip:
+    port: 5060
+    transport: "udp"
+    realm: "roip.dev"
+    user_agent: "ESP32-RoIP-Server/1.0-dev"
+
+  # RTP settings
+  rtp:
+    port_min: 10000
+    port_max: 10100
+    payload_type: 96
+
+  # Web API settings
+  api:
+    port: 8080
+    enable_cors: true
+    cors_origins: "*"  # Allow all origins in development
+
+  # WebSocket settings
+  websocket:
+    port: 8081
+    ping_interval: 30000
+
+# Performance optimization settings
+performance:
+  # Cluster mode (disabled for development)
+  cluster:
+    enabled: false  # Single process for easier debugging
+    workers: 1
+
+  # HTTP keep-alive settings
+  keepAlive:
+    enabled: true
+    timeout: 65000
+    headersTimeout: 66000
+
+  # Compression settings
+  compression:
+    enabled: false  # Disabled for easier debugging
+    level: 1
+    threshold: 1024
+
+  # API response caching
+  cache:
+    enabled: false  # Disabled for development
+    defaultTTL: 5
+    checkPeriod: 30
+    logStats: true
+
+  # Event loop monitoring
+  eventLoopMonitoring:
+    enabled: true
+    lagThreshold: 20  # Very sensitive in development
+    checkInterval: 2000
+
+  # Memory monitoring
+  memoryMonitoring:
+    enabled: true
+    threshold: 0.8
+    checkInterval: 15000
+
+# Database configuration
+database:
+  type: "sqlite"  # SQLite for easy local development
+
+  # SQLite settings
+  sqlite:
+    file: "./data/roip_dev.db"
+
+  # PostgreSQL settings (optional)
+  postgresql:
+    enabled: false
+    host: "localhost"
+    port: 5432
+    database: "roip_dev"
+    username: "roip_dev"
+    password: "dev_password"
+    pool_size: 5
+
+# Authentication settings
+auth:
+  # JWT tokens for API
+  jwt_secret: "dev-secret-not-for-production"
+  jwt_expiry: "7d"  # Long expiry for development
+
+  # SIP digest authentication
+  sip_auth_enabled: false  # Disabled for easier testing
+
+  # Admin user
+  admin:
+    username: "admin"
+    password: "admin"  # Simple password for development
+
+# STUN/TURN settings for NAT traversal
+nat_traversal:
+  # STUN server
+  stun:
+    enabled: true
+    servers:
+      - "stun:stun.l.google.com:19302"
+
+  # TURN relay server
+  turn:
+    enabled: false  # Not needed locally
+    host: "localhost"
+    port: 3478
+    realm: "roip.dev"
+    secret: "dev-turn-secret"
+
+# Audio/Codec settings
+audio:
+  # Supported codecs
+  codecs:
+    - name: "opus"
+      payload_type: 96
+      sample_rate: 24000
+      channels: 1
+      bitrate: 32000
+
+    - name: "pcmu"
+      payload_type: 0
+      sample_rate: 8000
+      channels: 1
+
+  # Jitter buffer settings
+  jitter_buffer:
+    min_delay_ms: 20
+    max_delay_ms: 200
+    target_delay_ms: 50
+
+# Call routing and mixing
+routing:
+  # Maximum simultaneous calls
+  max_concurrent_calls: 10
+
+  # Call timeout (seconds)
+  call_timeout: 600  # 10 minutes
+
+  # Enable audio mixing/conferencing
+  enable_mixing: true
+
+  # Maximum participants in a conference
+  max_conference_size: 5
+
+# Recording settings
+recording:
+  enabled: true
+  path: "./recordings"
+  format: "wav"
+  retention_days: 1  # Short retention in development
+
+# Logging configuration
+logging:
+  level: "debug"  # Verbose logging in development
+
+  # Console logging
+  console:
+    enabled: true
+    colorize: true  # Colored output
+
+  # File logging
+  file:
+    enabled: false  # Disabled in development (use console)
+    path: "./logs"
+    filename: "roip-dev.log"
+    max_size: "10m"
+    max_files: 2
+
+  # SIP message logging (enabled for debugging)
+  sip_messages: true
+
+  # RTP packet logging (can be very verbose)
+  rtp_packets: false  # Set to true only when needed
+
+# Quality of Service
+qos:
+  # DSCP marking (disabled locally)
+  dscp_enabled: false
+  dscp_value: 46
+
+# Security settings
+security:
+  # Rate limiting (disabled for development)
+  rate_limit:
+    enabled: false
+    window_ms: 60000
+    max_requests: 10000
+
+  # HTTPS/TLS settings
+  https:
+    enabled: false
+    cert_file: "./certs/dev.crt"
+    key_file: "./certs/dev.key"
+
+  # SRTP
+  srtp:
+    enabled: false
+    crypto_suites:
+      - "AES_CM_128_HMAC_SHA1_80"
+
+# TLS configuration
+tls:
+  enabled: false
+  cert: "./certs/dev.crt"
+  key: "./certs/dev.key"
+  ca: "./certs/ca.crt"
+  redirect_http: false
+  http_redirect_port: 8079
+
+# Device management
+devices:
+  # Auto-register devices
+  auto_registration: true
+
+  # Registration expiry (seconds)
+  registration_expiry: 3600
+
+  # Maximum devices per user
+  max_devices_per_user: 5
+
+# Monitoring and health
+monitoring:
+  # Metrics endpoint
+  metrics_enabled: true
+  metrics_port: 9090
+
+  # Health check endpoint
+  health_check_enabled: true
+
+  # Statistics update interval (seconds)
+  stats_interval: 2  # Very frequent for development
+
+# Features
+features:
+  # DTMF relay
+  dtmf_relay: true
+
+  # Voice activity detection
+  vad: false  # Disabled for easier testing
+
+  # Comfort noise generation
+  cng: false
+
+  # Forward error correction
+  fec: false
+
+  # Debug features
+  debug_mode: true
+  trace_sip: true
+  trace_rtp: false
+  hot_reload: true  # Enable hot reload for development
+
+# Rate limiting configuration (disabled)
+rate_limiting:
+  window_ms: 60000
+  max_requests: 100000
+  auth_max_requests: 10000
+  device_max_requests: 10000
+  call_max_requests: 10000
+
+# Development features
+development:
+  # Enable development endpoints
+  enable_dev_endpoints: true
+
+  # Auto-reload on file changes
+  auto_reload: true
+
+  # Mock external services
+  mock_services: true
+
+  # Test data generation
+  generate_test_data: true
+
+  # Disable caching
+  disable_cache: true
+
+  # Verbose error messages
+  verbose_errors: true
+
+  # Stack traces in responses
+  include_stack_traces: true
+
+# Testing features
+testing:
+  # Enable test endpoints
+  enable_test_endpoints: true
+
+  # Test user credentials
+  test_users:
+    - username: "test1"
+      password: "test1"
+    - username: "test2"
+      password: "test2"

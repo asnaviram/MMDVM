@@ -1,0 +1,38 @@
+{
+  "all": true,
+  "include": [
+    "src/**/*.js"
+  ],
+  "exclude": [
+    "src/**/*.example.js",
+    "src/**/index.js",
+    "test/**",
+    "coverage/**",
+    "node_modules/**"
+  ],
+  "reporter": [
+    "text",
+    "text-summary",
+    "html",
+    "lcov",
+    "json"
+  ],
+  "report-dir": "./coverage",
+  "temp-dir": "./coverage/.nyc_output",
+  "check-coverage": true,
+  "lines": 70,
+  "statements": 70,
+  "functions": 70,
+  "branches": 70,
+  "watermarks": {
+    "lines": [70, 85],
+    "functions": [70, 85],
+    "branches": [70, 85],
+    "statements": [70, 85]
+  },
+  "cache": true,
+  "source-map": false,
+  "instrument": true,
+  "produce-source-map": false,
+  "sourceMap": false
+}

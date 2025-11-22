@@ -197,9 +197,99 @@ export class APIRouter {
   };
 
   /**
+   * SECURITY: Input sanitization middleware to prevent injection attacks
+   */
+  sanitizeInput = (req, res, next) => {
+    const sanitizeValue = (value) => {
+      if (typeof value === 'string') {
+        // Remove potential command injection characters
+        return value
+          .replace(/[;&|`$()]/g, '')  // Remove shell metacharacters
+          .replace(/\.\./g, '')        // Remove directory traversal
+          .replace(/<script[^>]*>.*?<\/script>/gi, '') // Remove script tags
+          .trim();
+      }
+      if (typeof value === 'object' && value !== null) {
+        const sanitized = Array.isArray(value) ? [] : {};
+        for (const key in value) {
+          sanitized[key] = sanitizeValue(value[key]);
+        }
+        return sanitized;
+      }
+      return value;
+    };
+
+    // Sanitize body
+    if (req.body) {
+      req.body = sanitizeValue(req.body);
+    }
+
+    // Sanitize query parameters
+    if (req.query) {
+      req.query = sanitizeValue(req.query);
+    }
+
+    // Sanitize URL parameters
+    if (req.params) {
+      req.params = sanitizeValue(req.params);
+    }
+
+    next();
+  };
+
+  /**
+   * SECURITY: Role-based authorization middleware
+   */
+  requireRole = (roles) => {
+    return (req, res, next) => {
+      if (!req.user) {
+        return this.sendError(res, 401, 'Authentication required');
+      }
+
+      const userRoles = req.user.roles || [];
+      const requiredRoles = Array.isArray(roles) ? roles : [roles];
+
+      const hasRole = requiredRoles.some(role => userRoles.includes(role));
+
+      if (!hasRole) {
+        this.logger.warn(`Access denied for user ${req.user.username}: insufficient permissions (required: ${requiredRoles}, has: ${userRoles})`);
+        return this.sendError(res, 403, `Insufficient permissions. Required role: ${requiredRoles.join(' or ')}`);
+      }
+
+      next();
+    };
+  };
+
+  /**
+   * SECURITY: Query parameter validation middleware
+   */
+  validateQuery = (schema) => {
+    return (req, res, next) => {
+      const { error, value } = schema.validate(req.query, {
+        abortEarly: false,
+        stripUnknown: true
+      });
+
+      if (error) {
+        const messages = error.details.map(detail => ({
+          field: detail.path.join('.'),
+          message: detail.message
+        }));
+        return this.sendError(res, 400, 'Query validation error', messages);
+      }
+
+      req.query = value;
+      next();
+    };
+  };
+
+  /**
    * Register all API routes
    */
   registerRoutes() {
+    // SECURITY: Apply input sanitization to all routes
+    this.router.use(this.sanitizeInput);
+
     // Apply general rate limiter to all routes
     this.router.use(this.apiLimiter);
 
@@ -386,22 +476,26 @@ export class APIRouter {
       this.handleDisableRoute.bind(this)
     );
 
-    // CONFIG ROUTES
+    // CONFIG ROUTES - SECURITY: Admin access only
     this.router.get(
       '/config',
       this.authenticateJWT,
+      this.requireRole('admin'),
       this.handleGetConfig.bind(this)
     );
 
     this.router.get(
       '/config/:section',
       this.authenticateJWT,
+      this.requireRole('admin'),
+      this.validateRequest(this.schemas.configSection, 'params'),
       this.handleGetConfigSection.bind(this)
     );
 
     this.router.put(
       '/config',
       this.authenticateJWT,
+      this.requireRole('admin'),
       this.validateRequest(this.schemas.configUpdate),
       this.handleUpdateConfig.bind(this)
     );
@@ -409,6 +503,8 @@ export class APIRouter {
     this.router.put(
       '/config/:section',
       this.authenticateJWT,
+      this.requireRole('admin'),
+      this.validateRequest(this.schemas.configSection, 'params'),
       this.validateRequest(this.schemas.configSectionUpdate),
       this.handleUpdateConfigSection.bind(this)
     );
@@ -416,18 +512,21 @@ export class APIRouter {
     this.router.post(
       '/config/reload',
       this.authenticateJWT,
+      this.requireRole('admin'),
       this.handleReloadConfig.bind(this)
     );
 
     this.router.post(
       '/config/backup',
       this.authenticateJWT,
+      this.requireRole('admin'),
       this.handleBackupConfig.bind(this)
     );
 
     this.router.post(
       '/config/restore',
       this.authenticateJWT,
+      this.requireRole('admin'),
       this.validateRequest(this.schemas.configRestore),
       this.handleRestoreConfig.bind(this)
     );
@@ -588,12 +687,32 @@ export class APIRouter {
         description: Joi.string().max(500)
       }),
 
-      configUpdate: Joi.object().unknown(true),
+      configSection: Joi.object({
+        section: Joi.string()
+          .valid('server', 'database', 'auth', 'audio', 'routing', 'recording', 'logging', 'qos', 'tls', 'security', 'devices', 'monitoring', 'features')
+          .required()
+      }),
 
-      configSectionUpdate: Joi.object().unknown(true),
+      configUpdate: Joi.object({
+        server: Joi.object().optional(),
+        database: Joi.object().optional(),
+        auth: Joi.object().optional(),
+        audio: Joi.object().optional(),
+        routing: Joi.object().optional(),
+        recording: Joi.object().optional(),
+        logging: Joi.object().optional(),
+        qos: Joi.object().optional(),
+        tls: Joi.object().optional(),
+        security: Joi.object().optional(),
+        devices: Joi.object().optional(),
+        monitoring: Joi.object().optional(),
+        features: Joi.object().optional()
+      }).min(1),
+
+      configSectionUpdate: Joi.object().unknown(true).min(1),
 
       configRestore: Joi.object({
-        backup_id: Joi.string().required(),
+        backup_id: Joi.string().alphanum().min(10).max(100).required(),
         force: Joi.boolean().default(false)
       }),
 

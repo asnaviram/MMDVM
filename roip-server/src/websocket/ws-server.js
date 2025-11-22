@@ -1,10 +1,18 @@
 const WebSocket = require('ws');
 const EventEmitter = require('events');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
+const url = require('url');
 
 /**
  * WebSocketServer - Real-time communication server for RoIP system
  * Manages client connections, event broadcasting, and message routing
+ *
+ * SECURITY FEATURES:
+ * - Origin validation against whitelist
+ * - JWT token authentication on connection
+ * - Token expiration checks
+ * - Rate limiting per connection
  */
 class WebSocketServer extends EventEmitter {
   constructor(options = {}) {
@@ -21,6 +29,16 @@ class WebSocketServer extends EventEmitter {
     this.messageHandlers = new Map();
     this.isAlive = new Map(); // clientId -> boolean
     this.authTokens = new Map(); // clientId -> token
+
+    // SECURITY: Origin validation configuration
+    this.allowedOrigins = options.allowedOrigins || ['http://localhost:3000', 'https://localhost:3000'];
+    this.jwtSecret = options.jwtSecret || null;
+    this.requireAuth = options.requireAuth !== false; // Default to true
+
+    // SECURITY: Connection rate limiting
+    this.connectionAttempts = new Map(); // IP -> {count, resetTime}
+    this.maxConnectionsPerIP = options.maxConnectionsPerIP || 10;
+    this.connectionWindowMs = options.connectionWindowMs || 60000; // 1 minute
 
     this._initializeHandlers();
   }
@@ -136,25 +154,167 @@ class WebSocketServer extends EventEmitter {
   }
 
   /**
-   * Handle new client connection
+   * SECURITY: Validate origin against whitelist
+   * @private
+   */
+  _validateOrigin(origin) {
+    if (!origin) {
+      return false;
+    }
+
+    // Check if origin is in allowed list
+    // Support both exact match and wildcard patterns
+    return this.allowedOrigins.some(allowed => {
+      if (allowed === '*') {
+        return true; // Wildcard (not recommended for production)
+      }
+      return origin === allowed || origin.startsWith(allowed);
+    });
+  }
+
+  /**
+   * SECURITY: Validate JWT token from request
+   * @private
+   */
+  _validateJWTFromRequest(req) {
+    try {
+      // Try to get token from different sources
+      let token = null;
+
+      // 1. Check Sec-WebSocket-Protocol header (recommended for WebSocket)
+      const protocols = req.headers['sec-websocket-protocol'];
+      if (protocols) {
+        const protocolList = protocols.split(',').map(p => p.trim());
+        // Look for 'bearer.{token}' or just the token itself
+        for (const protocol of protocolList) {
+          if (protocol.startsWith('bearer.')) {
+            token = protocol.substring(7);
+            break;
+          }
+        }
+      }
+
+      // 2. Check Authorization header
+      if (!token && req.headers.authorization) {
+        const authHeader = req.headers.authorization;
+        if (authHeader.startsWith('Bearer ')) {
+          token = authHeader.substring(7);
+        }
+      }
+
+      // 3. Check query parameter
+      if (!token && req.url) {
+        const parsedUrl = url.parse(req.url, true);
+        token = parsedUrl.query.token;
+      }
+
+      if (!token) {
+        return { valid: false, error: 'No token provided' };
+      }
+
+      // Validate token
+      if (!this.jwtSecret) {
+        this.logger.warn('JWT secret not configured, skipping validation');
+        return { valid: true, payload: null };
+      }
+
+      const payload = jwt.verify(token, this.jwtSecret, {
+        algorithms: ['HS256']
+      });
+
+      // Check token expiration
+      if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
+        return { valid: false, error: 'Token expired' };
+      }
+
+      return { valid: true, payload, token };
+    } catch (error) {
+      this.logger.warn(`JWT validation failed: ${error.message}`);
+      return { valid: false, error: error.message };
+    }
+  }
+
+  /**
+   * SECURITY: Check connection rate limit for IP
+   * @private
+   */
+  _checkRateLimit(ip) {
+    const now = Date.now();
+    const record = this.connectionAttempts.get(ip);
+
+    if (!record || now > record.resetTime) {
+      // New window
+      this.connectionAttempts.set(ip, {
+        count: 1,
+        resetTime: now + this.connectionWindowMs
+      });
+      return true;
+    }
+
+    if (record.count >= this.maxConnectionsPerIP) {
+      return false;
+    }
+
+    record.count++;
+    return true;
+  }
+
+  /**
+   * Handle new client connection with security checks
    * @private
    */
   _handleConnection(ws, req) {
-    const clientId = this._generateClientId();
     const clientIp = req.socket.remoteAddress;
+    const origin = req.headers.origin || req.headers.referer;
 
-    this.logger.info(`Client connecting: ${clientId} from ${clientIp}`);
+    // SECURITY: Rate limiting
+    if (!this._checkRateLimit(clientIp)) {
+      this.logger.warn(`Rate limit exceeded for IP: ${clientIp}`);
+      ws.close(1008, 'Too many connection attempts');
+      return;
+    }
+
+    // SECURITY: Origin validation
+    if (origin && !this._validateOrigin(origin)) {
+      this.logger.warn(`Connection rejected - invalid origin: ${origin} from ${clientIp}`);
+      ws.close(1008, 'Origin not allowed');
+      this.emit('connection:rejected', { ip: clientIp, origin, reason: 'invalid_origin' });
+      return;
+    }
+
+    // SECURITY: JWT authentication (if required)
+    let tokenPayload = null;
+    let authToken = null;
+    if (this.requireAuth) {
+      const tokenValidation = this._validateJWTFromRequest(req);
+      if (!tokenValidation.valid) {
+        this.logger.warn(`Connection rejected - authentication failed: ${tokenValidation.error} from ${clientIp}`);
+        ws.close(1008, 'Authentication required');
+        this.emit('connection:rejected', { ip: clientIp, reason: 'auth_failed', error: tokenValidation.error });
+        return;
+      }
+      tokenPayload = tokenValidation.payload;
+      authToken = tokenValidation.token;
+    }
+
+    const clientId = this._generateClientId();
+    this.logger.info(`Client connected: ${clientId} from ${clientIp}${tokenPayload ? ` (user: ${tokenPayload.username || tokenPayload.sub})` : ''}`);
 
     // Add client to clients map
     this.clients.set(clientId, {
       ws,
       clientId,
       ip: clientIp,
-      authenticated: false,
+      authenticated: this.requireAuth ? true : false,
+      tokenPayload,
       metadata: {},
       connectedAt: new Date(),
       lastHeartbeat: new Date()
     });
+
+    if (authToken) {
+      this.authTokens.set(clientId, authToken);
+    }
 
     this.isAlive.set(clientId, true);
 

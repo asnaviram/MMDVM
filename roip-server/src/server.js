@@ -280,12 +280,49 @@ class RoIPServer {
       next();
     });
 
-    // CORS
+    // SECURITY: CORS with proper origin validation
     if (this.config.server.api.enable_cors) {
+      const corsOrigins = this.config.server.api.cors_origins;
+
+      // SECURITY WARNING: Reject wildcard origins in production
+      if (corsOrigins === '*') {
+        this.logger.warn('WARNING: CORS is configured with wildcard (*). This is NOT recommended for production!');
+        if (process.env.NODE_ENV === 'production') {
+          this.logger.error('SECURITY ERROR: Wildcard CORS is not allowed in production. Please configure specific origins.');
+          throw new Error('Wildcard CORS not allowed in production');
+        }
+      }
+
       app.use(cors({
-        origin: this.config.server.api.cors_origins,
-        credentials: true
+        origin: (origin, callback) => {
+          // Allow requests with no origin (like mobile apps or curl)
+          if (!origin) {
+            return callback(null, true);
+          }
+
+          // Check if origin is allowed
+          if (corsOrigins === '*') {
+            return callback(null, true);
+          }
+
+          const allowedOrigins = Array.isArray(corsOrigins) ? corsOrigins : [corsOrigins];
+
+          if (allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+            callback(null, true);
+          } else {
+            this.logger.warn(`CORS blocked origin: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+          }
+        },
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowedHeaders: ['Content-Type', 'Authorization'],
+        maxAge: 86400 // 24 hours
       }));
+
+      this.logger.info('✓ CORS configured', {
+        origins: corsOrigins === '*' ? 'WILDCARD (development only)' : corsOrigins
+      });
     }
 
     // Body parsers
@@ -413,17 +450,34 @@ class RoIPServer {
   }
 
   /**
-   * Initialize WebSocket server
+   * Initialize WebSocket server with security
    */
   async initWebSocket() {
     this.logger.info(`Starting WebSocket server on port ${this.config.server.websocket.port}...`);
-    this.components.websocket = new WebSocketServer(
-      this.config.server.websocket,
-      this.components,
-      this.logger
-    );
+
+    // SECURITY: Configure WebSocket with authentication and origin validation
+    const wsOptions = {
+      ...this.config.server.websocket,
+      logger: this.logger,
+      jwtSecret: this.config.auth.jwt_secret,
+      allowedOrigins: this.config.server.api.cors_origins === '*'
+        ? ['*'] // Only for development
+        : (Array.isArray(this.config.server.api.cors_origins)
+          ? this.config.server.api.cors_origins
+          : [this.config.server.api.cors_origins]),
+      requireAuth: this.config.security?.websocket?.require_auth !== false,
+      maxConnectionsPerIP: this.config.security?.websocket?.max_connections_per_ip || 10,
+      connectionWindowMs: this.config.security?.websocket?.connection_window_ms || 60000
+    };
+
+    this.components.websocket = new WebSocketServer(wsOptions);
     await this.components.websocket.start();
+
     this.logger.info(`✓ WebSocket server listening on ws://${this.config.server.host}:${this.config.server.websocket.port}`);
+    this.logger.info('✓ WebSocket security enabled', {
+      requireAuth: wsOptions.requireAuth,
+      allowedOrigins: wsOptions.allowedOrigins.length > 10 ? `${wsOptions.allowedOrigins.length} origins` : wsOptions.allowedOrigins
+    });
   }
 
   /**

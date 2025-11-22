@@ -1,0 +1,38 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: roip-server-pdb
+  namespace: roip-production
+  labels:
+    app: roip-server
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: roip-server
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: postgres-pdb
+  namespace: roip-production
+  labels:
+    app: postgres
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: postgres
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: redis-pdb
+  namespace: roip-production
+  labels:
+    app: redis
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: redis

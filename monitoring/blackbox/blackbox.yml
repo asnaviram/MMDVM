@@ -1,0 +1,78 @@
+# Blackbox Exporter Configuration
+# Probes for HTTP, TCP, ICMP, and DNS endpoints
+
+modules:
+  # HTTP 2xx probe
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes: [200, 201, 204]
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      method: GET
+      preferred_ip_protocol: "ip4"
+      follow_redirects: true
+      fail_if_ssl: false
+      fail_if_not_ssl: false
+
+  # HTTP POST probe
+  http_post:
+    prober: http
+    timeout: 5s
+    http:
+      method: POST
+      headers:
+        Content-Type: application/json
+      body: '{}'
+
+  # HTTPS probe with SSL verification
+  https_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes: [200, 201, 204]
+      method: GET
+      tls_config:
+        insecure_skip_verify: false
+      preferred_ip_protocol: "ip4"
+
+  # TCP connect probe
+  tcp_connect:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: "ip4"
+
+  # UDP probe (for SIP)
+  udp_connect:
+    prober: udp
+    timeout: 5s
+    udp:
+      preferred_ip_protocol: "ip4"
+
+  # ICMP ping probe
+  icmp:
+    prober: icmp
+    timeout: 5s
+    icmp:
+      preferred_ip_protocol: "ip4"
+
+  # DNS probe
+  dns_udp:
+    prober: dns
+    timeout: 5s
+    dns:
+      query_name: "example.com"
+      query_type: "A"
+      preferred_ip_protocol: "ip4"
+
+  # WebSocket probe
+  websocket:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      headers:
+        Upgrade: websocket
+        Connection: Upgrade
+      valid_status_codes: [101]

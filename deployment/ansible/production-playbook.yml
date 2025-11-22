@@ -1,0 +1,517 @@
+---
+# ESP32 RoIP System - Production Deployment Playbook
+# Production-hardened deployment with security and reliability features
+#
+# Usage:
+#   ansible-playbook -i inventory/production production-playbook.yml
+#   ansible-playbook -i inventory/production production-playbook.yml --tags deploy
+#   ansible-playbook -i inventory/production production-playbook.yml --check
+
+- name: Production Deployment - Pre-flight Checks
+  hosts: all
+  become: yes
+  gather_facts: yes
+  tags: [always]
+
+  pre_tasks:
+    - name: Verify production environment
+      assert:
+        that:
+          - environment == "production"
+          - ansible_distribution == "Ubuntu" or ansible_distribution == "Debian"
+          - ansible_distribution_major_version|int >= 20
+        fail_msg: "This playbook is for production deployment only on Ubuntu 20+ or Debian"
+
+    - name: Check disk space
+      shell: df -h / | awk 'NR==2 {print $5}' | sed 's/%//'
+      register: disk_usage
+      changed_when: false
+
+    - name: Fail if disk space is low
+      fail:
+        msg: "Insufficient disk space. Usage: {{ disk_usage.stdout }}%"
+      when: disk_usage.stdout|int > 80
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: ansible_os_family == "Debian"
+
+    - name: Set timezone
+      timezone:
+        name: "{{ system_timezone | default('UTC') }}"
+
+    - name: Configure hostname
+      hostname:
+        name: "{{ inventory_hostname }}"
+
+- name: Production Deployment - System Hardening
+  hosts: all
+  become: yes
+  tags: [hardening]
+
+  tasks:
+    - name: Install security packages
+      apt:
+        name:
+          - ufw
+          - fail2ban
+          - unattended-upgrades
+          - apt-listchanges
+          - needrestart
+          - aide
+          - auditd
+          - apparmor
+          - apparmor-utils
+        state: present
+
+    - name: Configure automatic security updates
+      copy:
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        content: |
+          Unattended-Upgrade::Allowed-Origins {
+              "${distro_id}:${distro_codename}-security";
+          };
+          Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+          Unattended-Upgrade::MinimalSteps "true";
+          Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+          Unattended-Upgrade::Remove-Unused-Dependencies "true";
+          Unattended-Upgrade::Automatic-Reboot "false";
+          Unattended-Upgrade::Automatic-Reboot-Time "03:00";
+
+    - name: Configure UFW firewall
+      block:
+        - name: Set UFW default policies
+          ufw:
+            direction: "{{ item.direction }}"
+            policy: "{{ item.policy }}"
+          loop:
+            - { direction: 'incoming', policy: 'deny' }
+            - { direction: 'outgoing', policy: 'allow' }
+
+        - name: Allow SSH
+          ufw:
+            rule: limit
+            port: '22'
+            proto: tcp
+
+        - name: Allow HTTP/HTTPS
+          ufw:
+            rule: allow
+            port: "{{ item }}"
+            proto: tcp
+          loop:
+            - '80'
+            - '443'
+
+        - name: Allow SIP
+          ufw:
+            rule: allow
+            port: '5060'
+            proto: udp
+
+        - name: Allow RTP
+          ufw:
+            rule: allow
+            port: '10000:10100'
+            proto: udp
+
+        - name: Enable UFW
+          ufw:
+            state: enabled
+
+    - name: Configure fail2ban
+      copy:
+        dest: /etc/fail2ban/jail.local
+        content: |
+          [DEFAULT]
+          bantime = 3600
+          findtime = 600
+          maxretry = 5
+
+          [sshd]
+          enabled = true
+          port = 22
+
+          [nginx-http-auth]
+          enabled = true
+
+          [nginx-noscript]
+          enabled = true
+
+          [nginx-badbots]
+          enabled = true
+      notify: Restart fail2ban
+
+    - name: Configure sysctl for security
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        reload: yes
+      loop:
+        - { name: 'net.ipv4.conf.all.rp_filter', value: '1' }
+        - { name: 'net.ipv4.conf.default.rp_filter', value: '1' }
+        - { name: 'net.ipv4.icmp_echo_ignore_broadcasts', value: '1' }
+        - { name: 'net.ipv4.conf.all.accept_source_route', value: '0' }
+        - { name: 'net.ipv4.conf.default.accept_source_route', value: '0' }
+        - { name: 'net.ipv4.tcp_syncookies', value: '1' }
+        - { name: 'net.ipv4.tcp_max_syn_backlog', value: '2048' }
+        - { name: 'net.ipv4.tcp_synack_retries', value: '2' }
+        - { name: 'kernel.randomize_va_space', value: '2' }
+
+  handlers:
+    - name: Restart fail2ban
+      systemd:
+        name: fail2ban
+        state: restarted
+
+- name: Production Deployment - Database Setup
+  hosts: database,all_in_one
+  become: yes
+  tags: [database]
+
+  roles:
+    - role: postgresql
+
+  tasks:
+    - name: Configure PostgreSQL for production
+      lineinfile:
+        path: /etc/postgresql/{{ postgresql_version }}/main/postgresql.conf
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '^max_connections', line: 'max_connections = 200' }
+        - { regexp: '^shared_buffers', line: 'shared_buffers = 2GB' }
+        - { regexp: '^effective_cache_size', line: 'effective_cache_size = 6GB' }
+        - { regexp: '^maintenance_work_mem', line: 'maintenance_work_mem = 512MB' }
+        - { regexp: '^checkpoint_completion_target', line: 'checkpoint_completion_target = 0.9' }
+        - { regexp: '^wal_buffers', line: 'wal_buffers = 16MB' }
+        - { regexp: '^default_statistics_target', line: 'default_statistics_target = 100' }
+        - { regexp: '^random_page_cost', line: 'random_page_cost = 1.1' }
+        - { regexp: '^work_mem', line: 'work_mem = 10MB' }
+        - { regexp: '^min_wal_size', line: 'min_wal_size = 1GB' }
+        - { regexp: '^max_wal_size', line: 'max_wal_size = 4GB' }
+      notify: Restart PostgreSQL
+
+    - name: Configure PostgreSQL backup
+      cron:
+        name: "PostgreSQL backup"
+        minute: "0"
+        hour: "2"
+        job: "/usr/local/bin/pg_backup.sh"
+
+  handlers:
+    - name: Restart PostgreSQL
+      systemd:
+        name: postgresql
+        state: restarted
+
+- name: Production Deployment - TURN Server
+  hosts: turn_servers,all_in_one
+  become: yes
+  tags: [turn]
+
+  roles:
+    - role: coturn
+
+  tasks:
+    - name: Configure coturn for production
+      template:
+        src: coturn-production.conf.j2
+        dest: /etc/turnserver.conf
+        mode: '0600'
+      notify: Restart coturn
+
+  handlers:
+    - name: Restart coturn
+      systemd:
+        name: coturn
+        state: restarted
+
+- name: Production Deployment - RoIP Application
+  hosts: app_servers,all_in_one
+  become: yes
+  tags: [app, deploy]
+
+  pre_tasks:
+    - name: Create application user
+      user:
+        name: roip
+        system: yes
+        shell: /bin/bash
+        home: /opt/roip
+
+    - name: Create application directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: roip
+        group: roip
+        mode: '0755'
+      loop:
+        - /opt/roip
+        - /opt/roip/releases
+        - /opt/roip/shared
+        - /opt/roip/shared/logs
+        - /opt/roip/shared/data
+        - /opt/roip/shared/recordings
+        - /var/log/roip
+        - /var/backups/roip
+
+  tasks:
+    - name: Install Node.js
+      block:
+        - name: Add NodeSource repository
+          shell: curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+          args:
+            creates: /etc/apt/sources.list.d/nodesource.list
+
+        - name: Install Node.js
+          apt:
+            name: nodejs
+            state: present
+
+    - name: Install PM2
+      npm:
+        name: pm2
+        global: yes
+        state: present
+
+    - name: Create release directory
+      file:
+        path: "/opt/roip/releases/{{ deploy_version | default(ansible_date_time.epoch) }}"
+        state: directory
+        owner: roip
+        group: roip
+
+    - name: Deploy application code
+      synchronize:
+        src: "{{ playbook_dir }}/../../roip-server/"
+        dest: "/opt/roip/releases/{{ deploy_version | default(ansible_date_time.epoch) }}/"
+        delete: yes
+        rsync_opts:
+          - "--exclude=node_modules"
+          - "--exclude=.git"
+          - "--exclude=logs"
+          - "--exclude=data"
+      become_user: roip
+
+    - name: Install application dependencies
+      npm:
+        path: "/opt/roip/releases/{{ deploy_version | default(ansible_date_time.epoch) }}"
+        production: yes
+        state: present
+      become_user: roip
+
+    - name: Create symlink to current release
+      file:
+        src: "/opt/roip/releases/{{ deploy_version | default(ansible_date_time.epoch) }}"
+        dest: /opt/roip/current
+        state: link
+        owner: roip
+        group: roip
+
+    - name: Deploy production configuration
+      template:
+        src: production-config.yaml.j2
+        dest: /opt/roip/current/config/production.yaml
+        owner: roip
+        group: roip
+        mode: '0600'
+
+    - name: Deploy environment file
+      template:
+        src: env.j2
+        dest: /opt/roip/shared/.env
+        owner: roip
+        group: roip
+        mode: '0600'
+
+    - name: Run database migrations
+      command: node src/migrations/migrate.js up
+      args:
+        chdir: /opt/roip/current
+      become_user: roip
+      environment:
+        NODE_ENV: production
+
+    - name: Configure PM2 ecosystem
+      template:
+        src: ecosystem.config.js.j2
+        dest: /opt/roip/current/ecosystem.config.js
+        owner: roip
+        group: roip
+
+    - name: Start application with PM2
+      command: pm2 startOrRestart /opt/roip/current/ecosystem.config.js --env production
+      become_user: roip
+
+    - name: Save PM2 configuration
+      command: pm2 save
+      become_user: roip
+
+    - name: Setup PM2 startup script
+      command: pm2 startup systemd -u roip --hp /opt/roip
+      args:
+        creates: /etc/systemd/system/pm2-roip.service
+
+    - name: Configure log rotation
+      copy:
+        dest: /etc/logrotate.d/roip
+        content: |
+          /var/log/roip/*.log {
+              daily
+              rotate 14
+              compress
+              delaycompress
+              notifempty
+              missingok
+              copytruncate
+          }
+
+- name: Production Deployment - Nginx Reverse Proxy
+  hosts: web_servers,all_in_one
+  become: yes
+  tags: [nginx]
+
+  roles:
+    - role: nginx
+
+  tasks:
+    - name: Deploy production nginx configuration
+      template:
+        src: nginx-production.conf.j2
+        dest: /etc/nginx/sites-available/roip
+      notify: Reload nginx
+
+    - name: Enable site
+      file:
+        src: /etc/nginx/sites-available/roip
+        dest: /etc/nginx/sites-enabled/roip
+        state: link
+      notify: Reload nginx
+
+    - name: Remove default site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload nginx
+
+    - name: Configure SSL/TLS
+      block:
+        - name: Install certbot
+          apt:
+            name:
+              - certbot
+              - python3-certbot-nginx
+            state: present
+
+        - name: Obtain SSL certificate
+          command: >
+            certbot --nginx
+            --non-interactive
+            --agree-tos
+            --email {{ ssl_email }}
+            --domains {{ domain_name }}
+          when: ssl_enabled | default(false)
+
+  handlers:
+    - name: Reload nginx
+      systemd:
+        name: nginx
+        state: reloaded
+
+- name: Production Deployment - Monitoring
+  hosts: monitoring,all_in_one
+  become: yes
+  tags: [monitoring]
+
+  roles:
+    - role: monitoring
+
+  tasks:
+    - name: Configure Prometheus for production
+      template:
+        src: prometheus-production.yml.j2
+        dest: /etc/prometheus/prometheus.yml
+      notify: Reload prometheus
+
+    - name: Configure alerting rules
+      template:
+        src: alert-rules.yml.j2
+        dest: /etc/prometheus/rules/roip.yml
+      notify: Reload prometheus
+
+  handlers:
+    - name: Reload prometheus
+      systemd:
+        name: prometheus
+        state: reloaded
+
+- name: Production Deployment - Health Checks
+  hosts: app_servers,all_in_one
+  become: yes
+  tags: [health]
+
+  tasks:
+    - name: Wait for application to start
+      wait_for:
+        port: 8080
+        delay: 10
+        timeout: 300
+
+    - name: Check health endpoint
+      uri:
+        url: http://localhost:8080/health
+        return_content: yes
+      register: health_check
+      until: health_check.json.status == "healthy"
+      retries: 10
+      delay: 5
+
+    - name: Check readiness endpoint
+      uri:
+        url: http://localhost:8080/health/ready
+        return_content: yes
+      register: ready_check
+      until: ready_check.json.ready == true
+      retries: 10
+      delay: 5
+
+    - name: Display health status
+      debug:
+        msg:
+          - "Health Status: {{ health_check.json.status }}"
+          - "Uptime: {{ health_check.json.uptime }}s"
+          - "Version: {{ health_check.json.version }}"
+
+- name: Production Deployment - Summary
+  hosts: all
+  tags: [always]
+
+  tasks:
+    - name: Display deployment summary
+      debug:
+        msg:
+          - "========================================"
+          - "Production Deployment Complete!"
+          - "========================================"
+          - "Environment: Production"
+          - "Timestamp: {{ ansible_date_time.iso8601 }}"
+          - "Deployed by: {{ ansible_user_id }}"
+          - ""
+          - "Services:"
+          - "  - API: https://{{ domain_name }}/api"
+          - "  - WebSocket: wss://{{ domain_name }}/ws"
+          - "  - Monitoring: http://{{ ansible_default_ipv4.address }}:3000"
+          - ""
+          - "Management:"
+          - "  - Logs: pm2 logs"
+          - "  - Status: pm2 status"
+          - "  - Restart: pm2 restart roip-server"
+          - ""
+          - "Backup:"
+          - "  - Location: /var/backups/roip"
+          - "  - Schedule: Daily at 2 AM"

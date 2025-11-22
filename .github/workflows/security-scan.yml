@@ -237,12 +237,192 @@ jobs:
           retention-days: 30
 
   # ============================================================
+  # DAST - Dynamic Application Security Testing
+  # ============================================================
+  dast-scan:
+    name: DAST Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: roip_test
+          POSTGRES_USER: roip_test
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: roip-server
+        run: npm ci
+
+      - name: Start application for DAST
+        working-directory: roip-server
+        run: |
+          npm start &
+          echo $! > /tmp/server.pid
+          sleep 15
+        env:
+          NODE_ENV: test
+          DB_TYPE: postgresql
+          DB_HOST: localhost
+          DB_PORT: 5432
+          DB_NAME: roip_test
+          DB_USER: roip_test
+          DB_PASSWORD: test_password
+          JWT_SECRET: test-secret-key
+          API_PORT: 8080
+
+      - name: Wait for server to be ready
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:8080/health; do sleep 2; done'
+
+      - name: Run OWASP ZAP Baseline Scan
+        uses: zaproxy/action-baseline@v0.12.0
+        with:
+          target: 'http://localhost:8080'
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a -j -m 10 -T 60'
+          allow_issue_writing: false
+
+      - name: Stop application
+        if: always()
+        run: |
+          if [ -f /tmp/server.pid ]; then
+            kill $(cat /tmp/server.pid) || true
+          fi
+
+      - name: Upload ZAP report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: zap-scan-report-${{ github.sha }}
+          path: |
+            report_html.html
+            report_md.md
+            report_json.json
+          retention-days: 30
+
+  # ============================================================
+  # Container Image Scanning with Trivy
+  # ============================================================
+  container-scan:
+    name: Container Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        working-directory: roip-server
+        run: |
+          docker build -t roip-server:scan .
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'roip-server:scan'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Run Trivy with table output
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'roip-server:scan'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Generate container security report
+        run: |
+          echo "# Container Security Report" > container-report.md
+          echo "" >> container-report.md
+          echo "**Image:** roip-server:scan" >> container-report.md
+          echo "**Scan Date:** $(date)" >> container-report.md
+
+      - name: Upload container scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: container-scan-report-${{ github.sha }}
+          path: |
+            trivy-results.sarif
+            container-report.md
+          retention-days: 30
+
+  # ============================================================
+  # Infrastructure as Code Security Scanning
+  # ============================================================
+  iac-scan:
+    name: IaC Security Scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Checkov for IaC scanning
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: .
+          framework: dockerfile,kubernetes,terraform
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          soft_fail: true
+
+      - name: Upload Checkov results
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: checkov-results.sarif
+
+      - name: Run tfsec for Terraform
+        if: hashFiles('deployment/terraform/**/*.tf') != ''
+        uses: aquasecurity/tfsec-action@v1.0.0
+        with:
+          working_directory: deployment/terraform
+          soft_fail: true
+
+      - name: Upload IaC scan report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iac-scan-report-${{ github.sha }}
+          path: checkov-results.sarif
+          retention-days: 30
+
+  # ============================================================
   # Security summary
   # ============================================================
   security-summary:
     name: Security Summary
     runs-on: ubuntu-latest
-    needs: [npm-audit, codeql-analysis, secret-scan, owasp-dependency-check, license-check]
+    needs: [npm-audit, codeql-analysis, secret-scan, owasp-dependency-check, license-check, dast-scan, container-scan, iac-scan]
     if: always()
 
     steps:
@@ -299,12 +479,40 @@ jobs:
             echo "| License Compliance | ⚠️  Review needed |" >> $GITHUB_STEP_SUMMARY
           fi
 
+          # DAST Scan
+          if [ "${{ needs.dast-scan.result }}" == "success" ]; then
+            echo "| DAST Security Scan | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.dast-scan.result }}" == "failure" ]; then
+            echo "| DAST Security Scan | ⚠️  Vulnerabilities found |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| DAST Security Scan | ⏭️  Skipped |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Container Scan
+          if [ "${{ needs.container-scan.result }}" == "success" ]; then
+            echo "| Container Security | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.container-scan.result }}" == "failure" ]; then
+            echo "| Container Security | ⚠️  Vulnerabilities found |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Container Security | ⏭️  Skipped |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # IaC Scan
+          if [ "${{ needs.iac-scan.result }}" == "success" ]; then
+            echo "| IaC Security Scan | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| IaC Security Scan | ⚠️  Issues found |" >> $GITHUB_STEP_SUMMARY
+          fi
+
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Recommendations" >> $GITHUB_STEP_SUMMARY
           echo "- Review all security reports in the artifacts" >> $GITHUB_STEP_SUMMARY
           echo "- Address critical and high severity issues immediately" >> $GITHUB_STEP_SUMMARY
           echo "- Update dependencies regularly using Dependabot" >> $GITHUB_STEP_SUMMARY
           echo "- Monitor the Security tab for ongoing alerts" >> $GITHUB_STEP_SUMMARY
+          echo "- Review DAST findings for runtime vulnerabilities" >> $GITHUB_STEP_SUMMARY
+          echo "- Check container scan results for base image issues" >> $GITHUB_STEP_SUMMARY
+          echo "- Validate IaC configurations meet security standards" >> $GITHUB_STEP_SUMMARY
 
       - name: Check critical failures
         run: |

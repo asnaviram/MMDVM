@@ -613,11 +613,31 @@ bool initializeFileSystem() {
 
 bool initializePeripherals() {
     // Configure power management
+#if defined(ESP32S3)
+    esp_pm_config_esp32s3_t pm_config = {
+        .max_freq_mhz = 240,
+        .min_freq_mhz = 80,
+        .light_sleep_enable = false
+    };
+#elif defined(ESP32S2)
+    esp_pm_config_esp32s2_t pm_config = {
+        .max_freq_mhz = 240,
+        .min_freq_mhz = 80,
+        .light_sleep_enable = false
+    };
+#elif defined(ESP32C3)
+    esp_pm_config_esp32c3_t pm_config = {
+        .max_freq_mhz = 160,
+        .min_freq_mhz = 80,
+        .light_sleep_enable = false
+    };
+#else
     esp_pm_config_esp32_t pm_config = {
         .max_freq_mhz = 240,
         .min_freq_mhz = 80,
         .light_sleep_enable = false
     };
+#endif
 
     if (esp_pm_configure(&pm_config) != ESP_OK) {
         LOG_WARN("Failed to configure power management");

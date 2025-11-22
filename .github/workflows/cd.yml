@@ -1,0 +1,499 @@
+name: Continuous Deployment
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      skip_tests:
+        description: 'Skip smoke tests (not recommended)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  NODE_VERSION: '20.x'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # ============================================================
+  # Determine deployment target
+  # ============================================================
+  determine-environment:
+    name: Determine Environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      should_deploy: ${{ steps.set-env.outputs.should_deploy }}
+
+    steps:
+      - name: Determine deployment environment
+        id: set-env
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "environment=${{ github.event.inputs.environment }}" >> $GITHUB_OUTPUT
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "should_deploy=true" >> $GITHUB_OUTPUT
+          else
+            echo "environment=none" >> $GITHUB_OUTPUT
+            echo "should_deploy=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Display deployment plan
+        run: |
+          echo "🚀 Deployment Plan"
+          echo "Environment: ${{ steps.set-env.outputs.environment }}"
+          echo "Should Deploy: ${{ steps.set-env.outputs.should_deploy }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Event: ${{ github.event_name }}"
+
+  # ============================================================
+  # Build Docker Image
+  # ============================================================
+  build-image:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: determine-environment
+    if: needs.determine-environment.outputs.should_deploy == 'true'
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      image_digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: ./roip-server
+          file: ./roip-server/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ github.ref_name }}
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ steps.meta.outputs.tags }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.spdx.json
+          retention-days: 90
+
+  # ============================================================
+  # Deploy to Staging
+  # ============================================================
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [determine-environment, build-image]
+    if: needs.determine-environment.outputs.environment == 'staging'
+    environment:
+      name: staging
+      url: https://staging.roip.example.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.STAGING_SSH_KEY }}
+
+      - name: Add staging host to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.STAGING_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Create backup before deployment
+        run: |
+          ssh ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} '
+            echo "Creating pre-deployment backup..."
+            cd /opt/roip-server
+            sudo systemctl stop roip-server || true
+            sudo tar -czf /var/backups/roip-server-$(date +%Y%m%d-%H%M%S).tar.gz \
+              config/ data/ || true
+          '
+
+      - name: Deploy with Ansible
+        working-directory: deployment/ansible
+        run: |
+          pip install ansible
+          ansible-playbook -i inventory/staging playbook.yml \
+            -e "docker_image=${{ needs.build-image.outputs.image_tag }}" \
+            -e "deployment_version=${{ github.sha }}" \
+            --limit staging
+
+      - name: Alternative - Deploy with Docker Compose
+        if: false  # Enable if using Docker Compose instead of Ansible
+        run: |
+          ssh ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} '
+            cd /opt/roip-server
+            docker pull ${{ needs.build-image.outputs.image_tag }}
+            docker-compose -f docker-compose.prod.yml up -d --no-build
+            docker-compose -f docker-compose.prod.yml ps
+          '
+
+      - name: Alternative - Deploy to Kubernetes
+        if: false  # Enable if using Kubernetes
+        run: |
+          echo "${{ secrets.KUBECONFIG_STAGING }}" > kubeconfig
+          export KUBECONFIG=kubeconfig
+          kubectl set image deployment/roip-server \
+            roip-server=${{ needs.build-image.outputs.image_tag }} \
+            -n roip-staging
+          kubectl rollout status deployment/roip-server -n roip-staging --timeout=5m
+
+      - name: Wait for deployment to stabilize
+        run: sleep 30
+
+      - name: Run smoke tests
+        if: github.event.inputs.skip_tests != 'true'
+        run: |
+          curl -f https://staging.roip.example.com/health || exit 1
+          curl -f https://staging.roip.example.com/api/status || exit 1
+          echo "✅ Smoke tests passed"
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "❌ Deployment failed - initiating rollback"
+          ssh ${{ secrets.STAGING_USER }}@${{ secrets.STAGING_HOST }} '
+            cd /opt/roip-server
+            docker-compose -f docker-compose.prod.yml down
+            # Restore from latest backup
+            LATEST_BACKUP=$(ls -t /var/backups/roip-server-*.tar.gz | head -1)
+            if [ -n "$LATEST_BACKUP" ]; then
+              sudo tar -xzf "$LATEST_BACKUP" -C /opt/roip-server
+              docker-compose -f docker-compose.prod.yml up -d
+              echo "✅ Rollback completed"
+            fi
+          '
+
+  # ============================================================
+  # Deploy to Production
+  # ============================================================
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [determine-environment, build-image]
+    if: needs.determine-environment.outputs.environment == 'production'
+    environment:
+      name: production
+      url: https://roip.example.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.PRODUCTION_SSH_KEY }}
+
+      - name: Add production hosts to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.PRODUCTION_HOST_1 }} >> ~/.ssh/known_hosts
+          ssh-keyscan -H ${{ secrets.PRODUCTION_HOST_2 }} >> ~/.ssh/known_hosts
+
+      - name: Create backup before deployment
+        run: |
+          ssh ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST_1 }} '
+            echo "Creating pre-deployment backup..."
+            cd /opt/roip-server
+            sudo systemctl stop roip-server || true
+            sudo tar -czf /var/backups/roip-server-$(date +%Y%m%d-%H%M%S).tar.gz \
+              config/ data/ || true
+          '
+
+      - name: Deploy to production cluster
+        working-directory: deployment/ansible
+        run: |
+          pip install ansible
+          ansible-playbook -i inventory/production playbook.yml \
+            -e "docker_image=${{ needs.build-image.outputs.image_tag }}" \
+            -e "deployment_version=${{ github.sha }}" \
+            --limit production
+
+      - name: Alternative - Blue-Green Deployment
+        if: false  # Enable for blue-green deployment strategy
+        run: |
+          # Deploy to green environment
+          ssh ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST_1 }} '
+            cd /opt/roip-server
+            docker pull ${{ needs.build-image.outputs.image_tag }}
+            docker-compose -f docker-compose.green.yml up -d
+          '
+
+          # Run health checks on green
+          sleep 30
+          curl -f https://green.roip.example.com/health || exit 1
+
+          # Switch traffic to green
+          echo "Switching traffic to green environment..."
+          # Update load balancer or DNS
+
+          # Stop blue environment
+          ssh ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST_1 }} '
+            docker-compose -f docker-compose.blue.yml down
+          '
+
+      - name: Wait for deployment to stabilize
+        run: sleep 60
+
+      - name: Run production smoke tests
+        if: github.event.inputs.skip_tests != 'true'
+        run: |
+          echo "Running production smoke tests..."
+          curl -f https://roip.example.com/health || exit 1
+          curl -f https://roip.example.com/api/status || exit 1
+
+          # Test SIP endpoint
+          timeout 10 nc -zv roip.example.com 5060 || echo "⚠️ SIP port check failed"
+
+          # Test WebSocket
+          curl -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" \
+            https://roip.example.com/ws || echo "⚠️ WebSocket check failed"
+
+          echo "✅ Production smoke tests passed"
+
+      - name: Update deployment status
+        run: |
+          echo "📊 Deployment Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** Production" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Image:** ${{ needs.build-image.outputs.image_tag }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployed at:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ✅ Successful" >> $GITHUB_STEP_SUMMARY
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          echo "❌ Production deployment failed - initiating rollback"
+
+          # Send alert
+          curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
+            -H 'Content-Type: application/json' \
+            -d '{"text":"🚨 Production deployment failed - rollback initiated"}' || true
+
+          ssh ${{ secrets.PRODUCTION_USER }}@${{ secrets.PRODUCTION_HOST_1 }} '
+            cd /opt/roip-server
+
+            # Stop current deployment
+            docker-compose -f docker-compose.prod.yml down
+
+            # Restore from latest backup
+            LATEST_BACKUP=$(ls -t /var/backups/roip-server-*.tar.gz | head -1)
+            if [ -n "$LATEST_BACKUP" ]; then
+              echo "Restoring from: $LATEST_BACKUP"
+              sudo tar -xzf "$LATEST_BACKUP" -C /opt/roip-server
+              docker-compose -f docker-compose.prod.yml up -d
+              echo "✅ Rollback completed"
+            else
+              echo "❌ No backup found for rollback"
+              exit 1
+            fi
+          '
+
+          # Verify rollback
+          sleep 30
+          curl -f https://roip.example.com/health || exit 1
+
+      - name: Notify deployment success
+        if: success()
+        run: |
+          # Slack notification
+          curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "text":"✅ Production deployment successful",
+              "blocks":[
+                {
+                  "type":"section",
+                  "text":{
+                    "type":"mrkdwn",
+                    "text":"*Production Deployment Successful* 🚀\n*Version:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*Deployed by:* ${{ github.actor }}"
+                  }
+                }
+              ]
+            }' || true
+
+  # ============================================================
+  # Post-Deployment Tests
+  # ============================================================
+  post-deployment-tests:
+    name: Post-Deployment Tests
+    runs-on: ubuntu-latest
+    needs: [determine-environment, deploy-staging, deploy-production]
+    if: |
+      always() &&
+      (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Set test target
+        id: target
+        run: |
+          if [ "${{ needs.determine-environment.outputs.environment }}" == "production" ]; then
+            echo "url=https://roip.example.com" >> $GITHUB_OUTPUT
+            echo "env=production" >> $GITHUB_OUTPUT
+          else
+            echo "url=https://staging.roip.example.com" >> $GITHUB_OUTPUT
+            echo "env=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Install test dependencies
+        working-directory: test/e2e
+        run: npm ci
+
+      - name: Run post-deployment E2E tests
+        working-directory: test/e2e
+        run: |
+          npm test -- --testNamePattern="smoke"
+        env:
+          SERVER_URL: ${{ steps.target.outputs.url }}
+          TEST_ENV: ${{ steps.target.outputs.env }}
+
+      - name: Run API integration tests
+        run: |
+          # Test health endpoint
+          curl -f ${{ steps.target.outputs.url }}/health || exit 1
+
+          # Test metrics endpoint
+          curl -f ${{ steps.target.outputs.url }}/metrics || exit 1
+
+          # Test API version
+          curl -f ${{ steps.target.outputs.url }}/api/version || exit 1
+
+          echo "✅ All post-deployment tests passed"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: post-deployment-test-results
+          path: test/e2e/test-results/
+          retention-days: 7
+
+  # ============================================================
+  # Deployment Summary
+  # ============================================================
+  deployment-summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [determine-environment, deploy-staging, deploy-production, post-deployment-tests]
+    if: always()
+
+    steps:
+      - name: Generate deployment summary
+        run: |
+          echo "# 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment:** ${{ needs.determine-environment.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment time:** $(date -u)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          echo "## Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.deploy-staging.result }}" == "success" ]; then
+            echo "✅ **Staging Deployment:** Successful" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.deploy-staging.result }}" != "" ]; then
+            echo "❌ **Staging Deployment:** Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.deploy-production.result }}" == "success" ]; then
+            echo "✅ **Production Deployment:** Successful" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.deploy-production.result }}" != "" ]; then
+            echo "❌ **Production Deployment:** Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.post-deployment-tests.result }}" == "success" ]; then
+            echo "✅ **Post-Deployment Tests:** Passed" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ needs.post-deployment-tests.result }}" != "" ]; then
+            echo "⚠️ **Post-Deployment Tests:** Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. Monitor application metrics and logs" >> $GITHUB_STEP_SUMMARY
+          echo "2. Check error rates and performance" >> $GITHUB_STEP_SUMMARY
+          echo "3. Verify database migrations completed" >> $GITHUB_STEP_SUMMARY
+          echo "4. Review application logs for any warnings" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check deployment status
+        run: |
+          STAGING_RESULT="${{ needs.deploy-staging.result }}"
+          PRODUCTION_RESULT="${{ needs.deploy-production.result }}"
+
+          if [ "$STAGING_RESULT" == "failure" ] || [ "$PRODUCTION_RESULT" == "failure" ]; then
+            echo "❌ Deployment failed"
+            exit 1
+          fi
+
+          echo "✅ Deployment completed successfully"

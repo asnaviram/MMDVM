@@ -1,0 +1,82 @@
+# Promtail Configuration for Log Shipping to Loki
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # RoIP Server Application Logs
+  - job_name: roip-server
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: roip-server
+          __path__: /var/log/roip-server/*.log
+
+  # Docker Container Logs
+  - job_name: docker
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container'
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: 'logstream'
+      - source_labels: ['__meta_docker_container_label_logging_jobname']
+        target_label: 'job'
+
+  # System Logs
+  - job_name: system
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: system
+          __path__: /var/log/syslog
+
+  # Nginx Access Logs
+  - job_name: nginx-access
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: nginx
+          type: access
+          __path__: /var/log/nginx/access.log
+
+  # Nginx Error Logs
+  - job_name: nginx-error
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: nginx
+          type: error
+          __path__: /var/log/nginx/error.log
+
+pipeline_stages:
+  # Extract log level
+  - regex:
+      expression: '.*(?P<level>(ERROR|WARN|INFO|DEBUG)).*'
+  - labels:
+      level:
+
+  # Extract timestamp
+  - timestamp:
+      source: time
+      format: RFC3339
+
+  # Drop debug logs in production
+  - drop:
+      source: level
+      expression: "DEBUG"
+      drop_counter_reason: debug_logs_dropped

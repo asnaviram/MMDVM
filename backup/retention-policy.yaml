@@ -1,0 +1,307 @@
+# Backup Retention Policy for ESP32 RoIP System
+# Defines how long different types of backups are kept
+
+# Policy version
+version: "1.0"
+last_updated: "2025-11-22"
+
+# Retention rules by backup type
+retention_rules:
+  # Full system backups
+  full_backup:
+    description: "Complete system backup including all components"
+    keep:
+      - type: hourly
+        count: 0
+        enabled: false
+
+      - type: daily
+        count: 7
+        enabled: true
+        description: "Last 7 days of daily backups"
+
+      - type: weekly
+        count: 4
+        enabled: true
+        description: "Last 4 weeks of weekly backups (taken on Sunday)"
+
+      - type: monthly
+        count: 12
+        enabled: true
+        description: "Last 12 months of monthly backups (taken on 1st)"
+
+      - type: yearly
+        count: 3
+        enabled: true
+        description: "Last 3 years of yearly backups (taken on Jan 1st)"
+
+  # Database backups
+  database_backup:
+    description: "Database backups with point-in-time recovery"
+    keep:
+      - type: hourly
+        count: 24
+        enabled: true
+        description: "Last 24 hours for point-in-time recovery"
+
+      - type: daily
+        count: 14
+        enabled: true
+        description: "Last 14 days of daily database snapshots"
+
+      - type: weekly
+        count: 8
+        enabled: true
+        description: "Last 8 weeks of weekly snapshots"
+
+      - type: monthly
+        count: 6
+        enabled: true
+        description: "Last 6 months of monthly snapshots"
+
+    # Transaction log retention for point-in-time recovery
+    transaction_logs:
+      days: 14
+      description: "WAL logs for PostgreSQL point-in-time recovery"
+
+  # Configuration backups
+  config_backup:
+    description: "Configuration file backups"
+    keep:
+      - type: daily
+        count: 30
+        enabled: true
+        description: "Last 30 days of config backups"
+
+      - type: weekly
+        count: 12
+        enabled: true
+        description: "Last 12 weeks of weekly config backups"
+
+      - type: monthly
+        count: 12
+        enabled: true
+        description: "Last 12 months of monthly config backups"
+
+    # Version control integration
+    version_control:
+      enabled: true
+      description: "Configs also tracked in git for unlimited history"
+
+  # Log backups
+  log_backup:
+    description: "Application and system logs"
+    keep:
+      - type: daily
+        count: 30
+        enabled: true
+        description: "Last 30 days of logs"
+
+      - type: weekly
+        count: 8
+        enabled: true
+        description: "Last 8 weeks of weekly log archives"
+
+    # Size-based cleanup
+    max_total_size: "100GB"
+    cleanup_policy: "delete_oldest_when_full"
+
+  # Firmware backups
+  firmware_backup:
+    description: "ESP32 firmware binary backups"
+    keep:
+      - type: release
+        count: 10
+        enabled: true
+        description: "Last 10 release builds"
+
+      - type: daily
+        count: 7
+        enabled: true
+        description: "Last 7 days of development builds"
+
+      - type: weekly
+        count: 4
+        enabled: true
+        description: "Last 4 weeks of weekly builds"
+
+  # Certificate backups
+  certificate_backup:
+    description: "TLS/SSL certificate backups"
+    keep:
+      - type: daily
+        count: 30
+        enabled: true
+        description: "Last 30 days of certificate backups"
+
+      - type: monthly
+        count: 12
+        enabled: true
+        description: "Last 12 months for audit trail"
+
+    # Keep certificates that haven't expired yet
+    keep_valid: true
+    description: "Always keep valid certificates"
+
+# Cleanup policies
+cleanup:
+  # When to run cleanup
+  schedule: "0 9 * * *"  # Daily at 9 AM
+
+  # Cleanup order (oldest first in each category)
+  order:
+    - expired_backups
+    - incomplete_backups
+    - temporary_files
+
+  # Safety measures
+  safety:
+    # Never delete if below minimum count
+    minimum_backups: 3
+
+    # Always keep at least this much recent data
+    minimum_age_to_delete: "24h"
+
+    # Require confirmation for manual cleanup
+    require_confirmation: true
+
+  # What happens to deleted backups
+  deletion:
+    # Move to trash first (safe delete)
+    use_trash: true
+    trash_retention_days: 7
+
+    # Or permanently delete
+    permanent_delete: false
+
+# Off-site retention (can differ from local)
+offsite_retention:
+  # Typically keep more off-site for disaster recovery
+  multiplier: 1.5
+  description: "Keep 50% more backups off-site than local"
+
+  # Off-site specific rules
+  s3_lifecycle_rules:
+    - name: "transition-to-glacier"
+      enabled: true
+      days: 90
+      description: "Move backups older than 90 days to Glacier"
+      transition_to: GLACIER
+
+    - name: "transition-to-deep-archive"
+      enabled: true
+      days: 365
+      description: "Move backups older than 1 year to Deep Archive"
+      transition_to: DEEP_ARCHIVE
+
+    - name: "expire-old-backups"
+      enabled: true
+      days: 2555  # 7 years
+      description: "Delete backups older than 7 years"
+      action: delete
+
+# Compliance and regulatory requirements
+compliance:
+  # Minimum retention for compliance
+  minimum_retention:
+    database: 30  # days
+    logs: 90  # days
+    config: 365  # days
+
+  # Regulatory requirements
+  regulations:
+    - name: "GDPR"
+      applicable: true
+      max_retention: 2555  # 7 years
+      description: "EU General Data Protection Regulation"
+
+    - name: "SOX"
+      applicable: false
+      max_retention: 2555  # 7 years
+      description: "Sarbanes-Oxley Act"
+
+  # Audit trail
+  audit:
+    enabled: true
+    log_deletions: true
+    retention: 2555  # Keep audit logs for 7 years
+
+# Special retention cases
+special_cases:
+  # Backups taken before major upgrades
+  pre_upgrade:
+    description: "Backups taken before system upgrades"
+    keep_for_days: 90
+    tag: "pre-upgrade"
+
+  # Backups with known good state
+  golden_backups:
+    description: "Verified good backups for recovery testing"
+    keep_for_days: 365
+    tag: "golden"
+
+  # Incident response backups
+  incident:
+    description: "Backups taken during security incidents"
+    keep_for_days: 2555
+    tag: "incident"
+
+  # Compliance snapshots
+  compliance_snapshot:
+    description: "Backups for compliance/audit purposes"
+    keep_for_days: 2555
+    tag: "compliance"
+
+# Monitoring and alerts
+monitoring:
+  # Alert when approaching limits
+  alerts:
+    storage_threshold: 85  # percent
+    backup_age_warning: 48  # hours
+    missing_backups: true
+
+  # Report generation
+  reports:
+    enabled: true
+    schedule: "0 10 * * 1"  # Weekly on Monday at 10 AM
+    include:
+      - total_backups
+      - storage_usage
+      - retention_compliance
+      - cleanup_summary
+
+# Retention policy enforcement
+enforcement:
+  # Automatically enforce retention policies
+  auto_enforce: true
+
+  # Grace period before deletion
+  grace_period_hours: 24
+
+  # Dry run mode (log what would be deleted, don't delete)
+  dry_run: false
+
+  # Override protection
+  protected_tags:
+    - golden
+    - incident
+    - compliance
+    - pre-upgrade
+
+# Cost optimization
+cost_optimization:
+  enabled: true
+
+  # Aggressive cleanup of non-critical data
+  aggressive_log_cleanup: true
+
+  # Compression for old backups
+  compress_old_backups:
+    enabled: true
+    age_threshold_days: 30
+    compression_level: 9
+
+  # Deduplication
+  deduplication:
+    enabled: true
+    method: "content_hash"
