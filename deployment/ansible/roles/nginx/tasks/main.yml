@@ -1,0 +1,79 @@
+---
+# Nginx Role - Main Tasks
+
+- name: Install Nginx
+  package:
+    name: nginx
+    state: present
+
+- name: Remove default Nginx site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: reload nginx
+
+- name: Deploy Nginx main configuration
+  template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: '0644'
+    validate: 'nginx -t -c %s'
+  notify: reload nginx
+
+- name: Deploy RoIP site configuration
+  template:
+    src: roip-site.conf.j2
+    dest: /etc/nginx/sites-available/roip
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+
+- name: Enable RoIP site
+  file:
+    src: /etc/nginx/sites-available/roip
+    dest: /etc/nginx/sites-enabled/roip
+    state: link
+  notify: reload nginx
+
+- name: Install Certbot for Let's Encrypt
+  package:
+    name:
+      - certbot
+      - python3-certbot-nginx
+    state: present
+  when: enable_ssl | default(false)
+
+- name: Obtain SSL certificate
+  command: >
+    certbot --nginx -d {{ domain_name }}
+    --non-interactive --agree-tos
+    --email {{ letsencrypt_email }}
+  args:
+    creates: /etc/letsencrypt/live/{{ domain_name }}/fullchain.pem
+  when: enable_ssl | default(false)
+  notify: reload nginx
+
+- name: Schedule certificate renewal
+  cron:
+    name: "Certbot renewal"
+    minute: "0"
+    hour: "3"
+    job: "certbot renew --quiet"
+  when: enable_ssl | default(false)
+
+- name: Ensure Nginx is started and enabled
+  systemd:
+    name: nginx
+    state: started
+    enabled: yes
+
+- name: Configure firewall for Nginx
+  ufw:
+    rule: allow
+    name: "{{ item }}"
+  loop:
+    - "Nginx Full"
+  when: ansible_os_family == "Debian"

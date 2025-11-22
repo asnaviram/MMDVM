@@ -19,7 +19,7 @@ export default {
   },
   transform: {},
   transformIgnorePatterns: [],
-  injectGlobals: true,
+  injectGlobals: false,
   verbose: true,
   bail: false,
   maxWorkers: '50%',

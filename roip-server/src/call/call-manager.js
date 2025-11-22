@@ -92,6 +92,16 @@ class Call {
    */
   addParticipant(participantInfo) {
     const { id, extension, address, port, codec } = participantInfo;
+
+    // Check conference size limit if this is a conference
+    if (this.isConference) {
+      const maxParticipants = this.config.call.max_conference_participants || 10;
+      if (this.participants.size >= maxParticipants) {
+        this.logger?.warn?.(`Cannot add participant: conference at maximum capacity (${maxParticipants})`);
+        return false;
+      }
+    }
+
     this.participants.set(id, {
       id,
       extension,

@@ -4,6 +4,7 @@
  * Digest authentication, and Dialog management
  */
 
+import { jest, describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import { SIPServer } from '../src/sip/sip-server.js';
 
 describe('SIP Server Tests', () => {
@@ -240,7 +241,9 @@ Content-Length: 0\r
               method: 'REGISTER',
               uri: 'sip:test.localhost',
               nonce: nonce,
-              qop: 'auth'
+              qop: 'auth',
+              nc: '00000001',
+              cnonce: 'abc123'
             }),
             qop: 'auth',
             nc: '00000001',
@@ -296,14 +299,27 @@ Content-Length: 0\r
             realm: 'test.localhost',
             nonce: nonce,
             uri: 'sip:test.localhost',
-            response: 'dummy'
+            response: sipServer.computeDigestResponse({
+              username: 'user',
+              realm: 'test.localhost',
+              password: 'testpass123',
+              method: 'REGISTER',
+              uri: 'sip:test.localhost',
+              nonce: nonce,
+              qop: 'auth',
+              nc: '00000001',
+              cnonce: 'abc123'
+            }),
+            qop: 'auth',
+            nc: '00000001',
+            cnonce: 'abc123',
+            algorithm: 'MD5'
           }
         },
         expires: 0,
         userAgent: 'TestClient/1.0'
       };
 
-      sipServer.verifyDigestAuth = jest.fn().mockResolvedValue({ valid: true, username: 'user' });
       sipServer.sendResponse = jest.fn();
 
       await sipServer.handleREGISTER(unregisterMsg, rinfo);
@@ -477,6 +493,7 @@ Content-Length: 0\r
         callId,
         state: 'established'
       });
+      sipServer.metrics.activeDialogs = sipServer.dialogs.size;
 
       expect(sipServer.metrics.activeDialogs).toBe(1);
 

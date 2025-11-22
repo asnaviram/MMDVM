@@ -20,6 +20,7 @@
 #include <esp_system.h>
 #include <esp_pm.h>
 #include <esp_ipc.h>
+#include <esp_task_wdt.h>
 #include <SPIFFS.h>
 #include <Preferences.h>
 #include <WiFi.h>
@@ -29,8 +30,18 @@
 #include <freertos/queue.h>
 #include <freertos/timers.h>
 
+// Forward declare Serial for logging
+extern HardwareSerial Serial;
+
 // Include configuration and component managers
 #include "../include/config.h"
+#include "../include/network_manager.h"
+#include "../include/dsp_processor.h"
+#include "../include/codec_opus.h"
+#include "../src/audio_pipeline.h"
+#include "../src/rtp_handler.h"
+#include "../src/sip_client.h"
+#include "../src/ptt_controller.h"
 
 // Disable watchdog during development/debugging if needed
 #define ENABLE_WATCHDOG true
@@ -172,166 +183,8 @@ void rptNetworkTask(void* parameter);
 void monitoringTask(void* parameter);
 
 // Interrupt handlers
-void IRAM_ATTR handlePTTInterrupt();
-void IRAM_ATTR handleCOSInterrupt();
-
-// ============================================================================
-// Component Manager Stubs (These would be full implementations in separate files)
-// ============================================================================
-
-class ConfigManager {
-public:
-    ConfigManager() : initialized(false) {}
-    bool begin() {
-        LOG_INFO("ConfigManager: Initializing...");
-        // Load configuration from SPIFFS or defaults
-        initialized = true;
-        return true;
-    }
-    bool isInitialized() const { return initialized; }
-    RoIPConfig& getConfig() { static RoIPConfig cfg; return cfg; }
-private:
-    bool initialized;
-};
-
-class NetworkManager {
-public:
-    NetworkManager() : initialized(false), connected(false) {}
-    bool begin() {
-        LOG_INFO("NetworkManager: Initializing...");
-        initialized = true;
-        return true;
-    }
-    bool connect(const char* ssid, const char* password) {
-        LOG_INFO("NetworkManager: Connecting to WiFi: %s", ssid);
-        return true;
-    }
-    bool isConnected() const { return connected; }
-    bool isInitialized() const { return initialized; }
-private:
-    bool initialized;
-    bool connected;
-};
-
-class AudioPipeline {
-public:
-    AudioPipeline() : initialized(false), running(false) {}
-    bool begin() {
-        LOG_INFO("AudioPipeline: Initializing...");
-        initialized = true;
-        return true;
-    }
-    bool start() {
-        LOG_INFO("AudioPipeline: Starting...");
-        running = true;
-        return true;
-    }
-    bool stop() {
-        LOG_INFO("AudioPipeline: Stopping...");
-        running = false;
-        return true;
-    }
-    bool isRunning() const { return running; }
-    bool isInitialized() const { return initialized; }
-private:
-    bool initialized;
-    bool running;
-};
-
-class DSPProcessor {
-public:
-    DSPProcessor() : initialized(false) {}
-    bool begin() {
-        LOG_INFO("DSPProcessor: Initializing...");
-        initialized = true;
-        return true;
-    }
-    bool process(int16_t* samples, uint16_t count) {
-        return initialized;
-    }
-    bool isInitialized() const { return initialized; }
-private:
-    bool initialized;
-};
-
-class OpusCodec {
-public:
-    OpusCodec() : initialized(false) {}
-    bool begin() {
-        LOG_INFO("OpusCodec: Initializing...");
-        initialized = true;
-        return true;
-    }
-    bool encode(int16_t* pcm, uint16_t samples, uint8_t* opus_data, uint16_t* opus_len) {
-        return initialized;
-    }
-    bool decode(uint8_t* opus_data, uint16_t opus_len, int16_t* pcm, uint16_t* samples) {
-        return initialized;
-    }
-    bool isInitialized() const { return initialized; }
-private:
-    bool initialized;
-};
-
-class RTPHandler {
-public:
-    RTPHandler() : initialized(false) {}
-    bool begin() {
-        LOG_INFO("RTPHandler: Initializing...");
-        initialized = true;
-        return true;
-    }
-    bool sendPacket(uint8_t* payload, uint16_t length) {
-        return initialized;
-    }
-    bool receivePacket(uint8_t* payload, uint16_t* length) {
-        return initialized;
-    }
-    bool isInitialized() const { return initialized; }
-private:
-    bool initialized;
-};
-
-class SIPClient {
-public:
-    SIPClient() : initialized(false), registered(false) {}
-    bool begin() {
-        LOG_INFO("SIPClient: Initializing...");
-        initialized = true;
-        return true;
-    }
-    bool registerWithServer() {
-        LOG_INFO("SIPClient: Registering with SIP server...");
-        registered = true;
-        return true;
-    }
-    bool isRegistered() const { return registered; }
-    bool isInitialized() const { return initialized; }
-private:
-    bool initialized;
-    bool registered;
-};
-
-class PTTController {
-public:
-    PTTController() : initialized(false), ptt_pressed(false) {}
-    bool begin() {
-        LOG_INFO("PTTController: Initializing...");
-        initialized = true;
-        return true;
-    }
-    bool isPTTPressed() const { return ptt_pressed; }
-    bool setTransmit(bool tx) {
-        ptt_pressed = tx;
-        return true;
-    }
-    bool isInitialized() const { return initialized; }
-private:
-    bool initialized;
-    bool ptt_pressed;
-};
-
-// Note: WebServer is provided by Arduino framework
+void IRAM_ATTR handlePTTInterrupt(void* arg);
+void IRAM_ATTR handleCOSInterrupt(void* arg);
 
 // ============================================================================
 // LOGGING MACROS
@@ -475,8 +328,7 @@ void setup() {
     LOG_INFO("Step 13: Connecting to WiFi...");
     updateSystemState(STATE_CONNECTING_WIFI);
 
-    RoIPConfig& cfg = g_config_manager->getConfig();
-    if (g_network_manager->connect(cfg.wifi_ssid, cfg.wifi_password)) {
+    if (g_network_manager->connect()) {
         LOG_INFO("Connected to WiFi!");
     } else {
         LOG_WARN("WiFi connection failed, will retry in main loop");
@@ -853,7 +705,7 @@ void handleSIPEvents() {
 // INTERRUPT HANDLERS (IRAM)
 // ============================================================================
 
-void IRAM_ATTR handlePTTInterrupt() {
+void IRAM_ATTR handlePTTInterrupt(void* arg) {
     // Read PTT pin state
     int ptt_state = gpio_get_level(PIN_PTT);
 
@@ -865,7 +717,7 @@ void IRAM_ATTR handlePTTInterrupt() {
     }
 }
 
-void IRAM_ATTR handleCOSInterrupt() {
+void IRAM_ATTR handleCOSInterrupt(void* arg) {
     // Read COS pin state
     int cos_state = gpio_get_level(PIN_COS);
 
@@ -980,8 +832,7 @@ void recoverFromError() {
 
     // Reconnect WiFi if needed
     if (g_network_manager && !g_network_manager->isConnected()) {
-        RoIPConfig& cfg = g_config_manager->getConfig();
-        g_network_manager->connect(cfg.wifi_ssid, cfg.wifi_password);
+        g_network_manager->connect();
     }
 
     // Re-register with SIP if needed
@@ -1002,8 +853,8 @@ void updateMetrics() {
     g_metrics.avg_cpu_load = 25.5f;
 
     // Calculate memory usage
-    uint32_t total_heap = esp_get_heap_size();
-    uint32_t free_heap = esp_get_free_heap_size();
+    uint32_t total_heap = ESP.getHeapSize();
+    uint32_t free_heap = ESP.getFreeHeap();
     g_metrics.avg_memory_used = ((float)(total_heap - free_heap) / total_heap) * 100.0f;
 
     g_metrics.error_count = g_last_error.error_count;

@@ -1,0 +1,110 @@
+---
+# PostgreSQL Role - Main Tasks
+
+- name: Install PostgreSQL repository
+  apt:
+    deb: https://apt.postgresql.org/pub/repos/apt/pool/main/p/postgresql-common/postgresql-common_254.pgdg22.04+1_all.deb
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Add PostgreSQL repository key
+  apt_key:
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install PostgreSQL
+  package:
+    name:
+      - postgresql-15
+      - postgresql-contrib-15
+      - python3-psycopg2
+    state: present
+
+- name: Ensure PostgreSQL is started and enabled
+  systemd:
+    name: postgresql
+    state: started
+    enabled: yes
+
+- name: Create database
+  postgresql_db:
+    name: "{{ db_name }}"
+    encoding: UTF8
+    lc_collate: en_US.UTF-8
+    lc_ctype: en_US.UTF-8
+    template: template0
+    state: present
+  become_user: postgres
+
+- name: Create database user
+  postgresql_user:
+    name: "{{ db_user }}"
+    password: "{{ db_password }}"
+    encrypted: yes
+    state: present
+  become_user: postgres
+  no_log: true
+
+- name: Grant privileges to database user
+  postgresql_privs:
+    database: "{{ db_name }}"
+    roles: "{{ db_user }}"
+    privs: ALL
+    type: database
+    state: present
+  become_user: postgres
+
+- name: Deploy PostgreSQL configuration
+  template:
+    src: postgresql.conf.j2
+    dest: /etc/postgresql/15/main/postgresql.conf
+    owner: postgres
+    group: postgres
+    mode: '0644'
+  notify: restart postgresql
+
+- name: Deploy pg_hba.conf
+  template:
+    src: pg_hba.conf.j2
+    dest: /etc/postgresql/15/main/pg_hba.conf
+    owner: postgres
+    group: postgres
+    mode: '0640'
+  notify: restart postgresql
+
+- name: Create backup directory
+  file:
+    path: /var/lib/postgresql/backups
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: '0700'
+  when: backup_enabled | default(false)
+
+- name: Deploy backup script
+  template:
+    src: backup.sh.j2
+    dest: /usr/local/bin/backup-postgres.sh
+    mode: '0750'
+    owner: postgres
+    group: postgres
+  when: backup_enabled | default(false)
+
+- name: Schedule database backups
+  cron:
+    name: "PostgreSQL backup"
+    minute: "0"
+    hour: "2"
+    job: "/usr/local/bin/backup-postgres.sh"
+    user: postgres
+  when: backup_enabled | default(false)
+
+- name: Configure firewall for PostgreSQL
+  ufw:
+    rule: allow
+    port: "{{ db_port }}"
+    proto: tcp
+    from_ip: "{{ item }}"
+  loop: "{{ db_allowed_hosts | default(['127.0.0.1']) }}"
+  when: ansible_os_family == "Debian"

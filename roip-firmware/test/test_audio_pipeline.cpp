@@ -653,7 +653,7 @@ void test_AudioPipeline_ADCResolution(void) {
 void test_AudioPipeline_ADCAttenuation(void) {
     // ADC attenuation for full-scale input
     adc_atten_t atten = AUDIO_ADC_ATTEN;
-    TEST_ASSERT_EQUAL(ADC_ATTEN_DB_11, atten);  // ~3.3V full scale
+    TEST_ASSERT_EQUAL(ADC_ATTEN_DB_12, atten);  // ~3.3V full scale
 }
 
 void test_AudioPipeline_DACBitDepth_ESP32(void) {

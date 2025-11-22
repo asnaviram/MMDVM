@@ -193,6 +193,7 @@ public:
     bool registerWithServer();
     bool unregisterFromServer();
     RegistrationState getRegistrationState() const { return m_registrationInfo.state; }
+    bool isRegistered() const { return m_registrationInfo.state == RegistrationState::REGISTERED; }
 
     // Call control
     bool makeCall(const std::string& remoteUri, const std::string& displayName = "");

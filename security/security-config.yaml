@@ -1,0 +1,813 @@
+# ESP32 RoIP Security Configuration
+# This file contains security policies, rules, and configurations
+# Version: 1.0
+
+# ============================================================================
+# SECURITY POLICIES
+# ============================================================================
+
+security_policies:
+  # Overall security level
+  security_level: "high"  # Options: low, medium, high, critical
+
+  # Compliance frameworks
+  compliance:
+    - OWASP_Top_10
+    - CWE_Top_25
+    - NIST_Cybersecurity_Framework
+
+  # Security contacts
+  contacts:
+    security_team_email: "security@example.com"
+    incident_response_email: "incident@example.com"
+    on_call_phone: "+1-555-0100"
+
+# ============================================================================
+# AUTHENTICATION & AUTHORIZATION
+# ============================================================================
+
+authentication:
+  # JWT Configuration
+  jwt:
+    algorithm: "HS256"  # or RS256 for asymmetric
+    access_token_expiry: "15m"
+    refresh_token_expiry: "7d"
+    issuer: "roip-server"
+    audience: "roip-clients"
+
+    # Secret management
+    secret_source: "environment"  # environment, vault, file
+    secret_env_var: "JWT_SECRET"
+    secret_rotation_days: 90
+
+    # Token validation
+    validate_issuer: true
+    validate_audience: true
+    validate_expiration: true
+    validate_not_before: true
+
+  # Password Policy
+  password_policy:
+    min_length: 12
+    max_length: 128
+    require_uppercase: true
+    require_lowercase: true
+    require_numbers: true
+    require_special_chars: true
+    special_chars: "!@#$%^&*()_+-=[]{}|;:,.<>?"
+
+    # Password history
+    prevent_reuse_count: 5
+    max_age_days: 90
+
+    # Complexity scoring
+    min_complexity_score: 3  # zxcvbn score
+
+  # Account Lockout
+  account_lockout:
+    enabled: true
+    max_failed_attempts: 5
+    lockout_duration_minutes: 30
+    lockout_type: "progressive"  # fixed, progressive
+    reset_after_success: true
+
+  # Multi-Factor Authentication
+  mfa:
+    enabled: false  # Enable for production
+    required_for_roles:
+      - admin
+      - operator
+    methods:
+      - totp
+      - sms
+      - email
+    backup_codes: 10
+
+  # Session Management
+  session:
+    timeout_minutes: 30
+    absolute_timeout_minutes: 480  # 8 hours
+    concurrent_sessions_per_user: 3
+    secure_cookie: true
+    http_only: true
+    same_site: "strict"  # strict, lax, none
+    regenerate_on_login: true
+
+  # SIP Authentication
+  sip:
+    digest_algorithm: "MD5"  # MD5 (RFC 3261), SHA-256
+    nonce_timeout_seconds: 300
+    nonce_length: 32
+    require_authentication: true
+
+    # SIP credentials
+    allowed_algorithms:
+      - "MD5"
+      - "SHA-256"
+    qop_options:
+      - "auth"
+      - "auth-int"
+
+# ============================================================================
+# AUTHORIZATION & ACCESS CONTROL
+# ============================================================================
+
+authorization:
+  # Role-Based Access Control (RBAC)
+  rbac:
+    enabled: true
+    default_role: "user"
+
+    roles:
+      admin:
+        permissions:
+          - "*"  # All permissions
+        description: "Full system access"
+
+      operator:
+        permissions:
+          - "calls:view"
+          - "calls:manage"
+          - "devices:view"
+          - "devices:manage"
+          - "routes:view"
+          - "routes:manage"
+        description: "Operational access"
+
+      user:
+        permissions:
+          - "calls:view:own"
+          - "devices:view:own"
+          - "profile:view"
+          - "profile:update"
+        description: "Standard user access"
+
+      readonly:
+        permissions:
+          - "calls:view"
+          - "devices:view"
+          - "routes:view"
+        description: "Read-only access"
+
+  # Attribute-Based Access Control (ABAC)
+  abac:
+    enabled: false
+    policy_engine: "opa"  # Open Policy Agent
+
+# ============================================================================
+# RATE LIMITING
+# ============================================================================
+
+rate_limiting:
+  enabled: true
+
+  # Global rate limits
+  global:
+    requests_per_minute: 1000
+    requests_per_hour: 10000
+
+  # API endpoint specific limits
+  api:
+    # Authentication endpoints
+    "/api/v1/auth/login":
+      requests_per_minute: 5
+      requests_per_hour: 20
+
+    "/api/v1/auth/refresh":
+      requests_per_minute: 10
+      requests_per_hour: 50
+
+    # Standard API endpoints
+    "/api/v1/*":
+      requests_per_minute: 100
+      requests_per_hour: 1000
+
+  # SIP rate limits
+  sip:
+    register_per_minute: 10
+    register_per_hour: 100
+    invite_per_minute: 30
+    invite_per_hour: 300
+
+  # WebSocket limits
+  websocket:
+    connections_per_ip: 5
+    messages_per_minute: 100
+
+  # Response on rate limit
+  response:
+    status_code: 429
+    retry_after_seconds: 60
+    message: "Rate limit exceeded. Please try again later."
+
+# ============================================================================
+# FIREWALL RULES
+# ============================================================================
+
+firewall:
+  # Default policy
+  default_policy: "deny"
+
+  # Allowed inbound rules
+  inbound:
+    # SIP signaling
+    - name: "SIP Signaling"
+      protocol: udp
+      port: 5060
+      source: "0.0.0.0/0"  # Restrict in production
+      action: allow
+      rate_limit: "10/sec"
+
+    # RTP Media
+    - name: "RTP Media"
+      protocol: udp
+      port_range: "10000-10100"
+      source: "0.0.0.0/0"  # Restrict in production
+      action: allow
+
+    # HTTPS API
+    - name: "HTTPS API"
+      protocol: tcp
+      port: 443
+      source: "0.0.0.0/0"
+      action: allow
+      rate_limit: "100/min"
+
+    # HTTP API (redirect to HTTPS)
+    - name: "HTTP API"
+      protocol: tcp
+      port: 8080
+      source: "0.0.0.0/0"
+      action: redirect
+      redirect_to: 443
+
+    # WebSocket
+    - name: "WebSocket"
+      protocol: tcp
+      port: 3000
+      source: "0.0.0.0/0"
+      action: allow
+      require_auth: true
+
+    # SSH (restricted)
+    - name: "SSH Management"
+      protocol: tcp
+      port: 22
+      source: "10.0.0.0/8"  # Internal only
+      action: allow
+      max_connections: 5
+
+  # Outbound rules
+  outbound:
+    # Default allow all outbound
+    - name: "Default Outbound"
+      protocol: all
+      destination: "0.0.0.0/0"
+      action: allow
+
+  # IP Blacklist
+  blacklist:
+    enabled: true
+    sources:
+      - file: "/etc/roip/blacklist.txt"
+      - url: "https://example.com/threat-feed.txt"
+    auto_update: true
+    update_interval_hours: 24
+
+  # IP Whitelist
+  whitelist:
+    enabled: false
+    mode: "disabled"  # disabled, enforce, alert
+    sources:
+      - "10.0.0.0/8"
+      - "172.16.0.0/12"
+      - "192.168.0.0/16"
+
+  # GeoIP Blocking
+  geoip:
+    enabled: false
+    blocked_countries: []
+    allowed_countries: []
+
+# ============================================================================
+# DDoS PROTECTION
+# ============================================================================
+
+ddos_protection:
+  enabled: true
+
+  # SYN flood protection
+  syn_flood:
+    enabled: true
+    max_syn_backlog: 1024
+    syn_cookies: true
+
+  # Connection limits
+  connection_limits:
+    max_connections_per_ip: 100
+    max_connections_global: 10000
+    new_connections_per_second: 50
+
+  # Packet filtering
+  packet_filtering:
+    drop_invalid: true
+    drop_fragmented: true
+    max_packet_size: 65535
+
+  # SIP-specific protection
+  sip_protection:
+    max_invite_per_second: 10
+    max_register_per_second: 5
+    detect_scanning: true
+    block_scanner_duration_minutes: 60
+
+  # RTP protection
+  rtp_protection:
+    max_streams_per_ip: 50
+    max_bandwidth_mbps: 100
+    detect_flooding: true
+
+# ============================================================================
+# ENCRYPTION
+# ============================================================================
+
+encryption:
+  # TLS/SSL Configuration
+  tls:
+    enabled: true
+    min_version: "1.2"
+    max_version: "1.3"
+
+    # Cipher suites (ordered by preference)
+    cipher_suites:
+      - "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"
+      - "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"
+      - "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"
+      - "TLS_AES_256_GCM_SHA384"
+      - "TLS_AES_128_GCM_SHA256"
+
+    # Certificate configuration
+    certificate:
+      path: "/etc/roip/certs/server.crt"
+      key_path: "/etc/roip/certs/server.key"
+      ca_path: "/etc/roip/certs/ca.crt"
+
+      # Certificate validation
+      verify_client: false
+      verify_depth: 3
+
+      # Certificate monitoring
+      expiry_warning_days: 30
+      auto_renewal: true
+
+    # HSTS
+    hsts:
+      enabled: true
+      max_age: 31536000  # 1 year
+      include_subdomains: true
+      preload: false
+
+  # SRTP (Secure RTP) for media encryption
+  srtp:
+    enabled: true
+    crypto_suite: "AES_CM_128_HMAC_SHA1_80"
+    key_derivation_rate: 0
+
+  # Database encryption
+  database:
+    encryption_at_rest: true
+    encryption_algorithm: "AES-256-GCM"
+    key_rotation_days: 90
+
+    # Encrypted fields
+    encrypted_fields:
+      - "users.password_hash"
+      - "recordings.file_path"
+      - "devices.sip_password"
+
+  # Data in transit
+  data_in_transit:
+    enforce_https: true
+    allow_http_redirect: true
+
+  # Key management
+  key_management:
+    backend: "file"  # file, vault, kms, hsm
+    rotation_enabled: true
+    rotation_interval_days: 90
+    key_backup: true
+    key_recovery_enabled: true
+
+# ============================================================================
+# INPUT VALIDATION
+# ============================================================================
+
+input_validation:
+  enabled: true
+  strict_mode: true
+
+  # Validation rules
+  rules:
+    # String fields
+    username:
+      type: "string"
+      min_length: 3
+      max_length: 30
+      pattern: "^[a-zA-Z0-9_-]+$"
+      trim: true
+
+    email:
+      type: "email"
+      max_length: 255
+      lowercase: true
+
+    password:
+      type: "string"
+      min_length: 12
+      max_length: 128
+
+    # Numeric fields
+    port:
+      type: "integer"
+      min: 1
+      max: 65535
+
+    # IP addresses
+    ip_address:
+      type: "ip"
+      versions: ["v4", "v6"]
+
+    # SIP URIs
+    sip_uri:
+      type: "string"
+      pattern: "^sip:[a-zA-Z0-9._-]+@[a-zA-Z0-9.-]+$"
+
+  # Sanitization
+  sanitization:
+    html_escape: true
+    sql_escape: true
+    remove_null_bytes: true
+    normalize_unicode: true
+
+  # File uploads
+  file_upload:
+    enabled: true
+    max_size_mb: 10
+    allowed_extensions:
+      - ".wav"
+      - ".mp3"
+      - ".opus"
+    mime_type_validation: true
+    virus_scan: false  # Enable with ClamAV
+
+  # Content Security
+  content_security:
+    max_json_size_kb: 1024
+    max_xml_size_kb: 1024
+    prevent_xxe: true
+    prevent_billion_laughs: true
+
+# ============================================================================
+# SECURITY HEADERS
+# ============================================================================
+
+security_headers:
+  enabled: true
+
+  headers:
+    # Prevent clickjacking
+    "X-Frame-Options": "DENY"
+
+    # Prevent MIME sniffing
+    "X-Content-Type-Options": "nosniff"
+
+    # XSS Protection
+    "X-XSS-Protection": "1; mode=block"
+
+    # Content Security Policy
+    "Content-Security-Policy":
+      default-src: "'self'"
+      script-src: "'self' 'unsafe-inline'"
+      style-src: "'self' 'unsafe-inline'"
+      img-src: "'self' data: https:"
+      connect-src: "'self' wss:"
+      font-src: "'self'"
+      object-src: "'none'"
+      frame-ancestors: "'none'"
+      base-uri: "'self'"
+      form-action: "'self'"
+
+    # Referrer Policy
+    "Referrer-Policy": "strict-origin-when-cross-origin"
+
+    # Permissions Policy
+    "Permissions-Policy":
+      - "geolocation=()"
+      - "microphone=(self)"
+      - "camera=()"
+      - "payment=()"
+
+    # Cross-Origin Policies
+    "Cross-Origin-Embedder-Policy": "require-corp"
+    "Cross-Origin-Opener-Policy": "same-origin"
+    "Cross-Origin-Resource-Policy": "same-origin"
+
+# ============================================================================
+# LOGGING & MONITORING
+# ============================================================================
+
+logging:
+  # Log levels
+  level: "info"  # debug, info, warn, error, critical
+
+  # Security event logging
+  security_events:
+    enabled: true
+
+    # Events to log
+    log_events:
+      - "authentication_success"
+      - "authentication_failure"
+      - "authorization_failure"
+      - "password_change"
+      - "account_lockout"
+      - "session_creation"
+      - "session_termination"
+      - "configuration_change"
+      - "security_policy_violation"
+      - "suspicious_activity"
+      - "rate_limit_exceeded"
+      - "firewall_block"
+
+    # Log format
+    format: "json"
+
+    # Log fields (do not log sensitive data)
+    fields:
+      - "timestamp"
+      - "event_type"
+      - "user_id"
+      - "username"
+      - "ip_address"
+      - "user_agent"
+      - "action"
+      - "resource"
+      - "status"
+      - "error_code"
+
+    # Do NOT log these fields
+    exclude_fields:
+      - "password"
+      - "token"
+      - "secret"
+      - "api_key"
+      - "authorization"
+
+  # Log storage
+  storage:
+    type: "file"  # file, syslog, elasticsearch, splunk
+    path: "/var/log/roip/security.log"
+    rotation: "daily"
+    retention_days: 90
+    max_size_mb: 100
+    compression: true
+
+  # Log forwarding
+  forwarding:
+    enabled: false
+    destinations:
+      - type: "syslog"
+        host: "syslog.example.com"
+        port: 514
+        protocol: "tcp"
+
+  # Alerting
+  alerting:
+    enabled: true
+
+    alert_rules:
+      # Multiple failed login attempts
+      - name: "Brute Force Attack"
+        condition: "authentication_failure count > 5 in 5m"
+        severity: "high"
+        actions:
+          - email
+          - webhook
+
+      # Account lockout
+      - name: "Account Locked"
+        condition: "account_lockout"
+        severity: "medium"
+        actions:
+          - email
+
+      # Privilege escalation attempt
+      - name: "Privilege Escalation"
+        condition: "authorization_failure AND action LIKE '%admin%'"
+        severity: "critical"
+        actions:
+          - email
+          - sms
+          - webhook
+
+# ============================================================================
+# INTRUSION DETECTION
+# ============================================================================
+
+intrusion_detection:
+  enabled: true
+
+  # Behavioral analysis
+  behavioral_analysis:
+    enabled: true
+    baseline_period_days: 7
+
+    # Anomaly detection
+    detect_anomalies:
+      - "unusual_login_time"
+      - "unusual_login_location"
+      - "unusual_api_usage"
+      - "unusual_call_patterns"
+
+  # Pattern matching
+  pattern_matching:
+    enabled: true
+
+    patterns:
+      # SQL injection
+      - name: "SQL Injection"
+        pattern: "(?i)(union|select|insert|update|delete|drop|create|alter)\\s+"
+        action: "block"
+
+      # Command injection
+      - name: "Command Injection"
+        pattern: "(?i)(;|\\||&|`|\\$\\()"
+        action: "block"
+
+      # Path traversal
+      - name: "Path Traversal"
+        pattern: "(?i)(\\.\\./|\\.\\\\)"
+        action: "block"
+
+  # File integrity monitoring
+  file_integrity:
+    enabled: true
+    monitored_paths:
+      - "/etc/roip/"
+      - "/opt/roip/config/"
+    hash_algorithm: "sha256"
+    check_interval_minutes: 60
+
+# ============================================================================
+# BACKUP & RECOVERY
+# ============================================================================
+
+backup:
+  # Backup configuration
+  enabled: true
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  retention_days: 30
+
+  # Backup encryption
+  encryption:
+    enabled: true
+    algorithm: "AES-256-GCM"
+
+  # Backup verification
+  verification:
+    enabled: true
+    test_restore_monthly: true
+
+  # Backup storage
+  storage:
+    type: "local"  # local, s3, azure, gcs
+    path: "/var/backups/roip"
+
+  # What to backup
+  include:
+    - database
+    - configuration
+    - logs
+    - recordings
+
+# ============================================================================
+# COMPLIANCE & AUDIT
+# ============================================================================
+
+compliance:
+  # Audit trail
+  audit_trail:
+    enabled: true
+    immutable: true
+    retention_years: 7
+
+  # GDPR compliance
+  gdpr:
+    enabled: false
+    data_protection_officer: "dpo@example.com"
+
+    # Data subject rights
+    right_to_access: true
+    right_to_erasure: true
+    right_to_portability: true
+
+    # Consent management
+    require_consent: true
+    consent_version: "1.0"
+
+  # PCI-DSS (if handling payments)
+  pci_dss:
+    enabled: false
+
+  # HIPAA (if handling health data)
+  hipaa:
+    enabled: false
+
+# ============================================================================
+# SECURITY TESTING
+# ============================================================================
+
+security_testing:
+  # Automated security scans
+  automated_scanning:
+    enabled: true
+
+    # Dependency scanning
+    dependency_scan:
+      enabled: true
+      schedule: "0 3 * * *"  # Daily at 3 AM
+      fail_on_critical: true
+
+    # Code scanning
+    code_scan:
+      enabled: true
+      schedule: "0 4 * * 0"  # Weekly
+
+    # Infrastructure scanning
+    infrastructure_scan:
+      enabled: true
+      schedule: "0 5 * * 0"  # Weekly
+
+  # Penetration testing
+  penetration_testing:
+    frequency: "quarterly"
+    last_test_date: null
+    next_test_date: null
+
+# ============================================================================
+# INCIDENT RESPONSE
+# ============================================================================
+
+incident_response:
+  # Incident detection
+  detection:
+    enabled: true
+    auto_respond: true
+
+  # Response actions
+  actions:
+    # Automatically block IPs with suspicious activity
+    auto_block_ip:
+      enabled: true
+      threshold_score: 75
+      block_duration_minutes: 60
+
+    # Automatically disable compromised accounts
+    auto_disable_account:
+      enabled: true
+      threshold_score: 90
+
+    # Notifications
+    notifications:
+      email: true
+      sms: false
+      webhook: true
+
+  # Incident tracking
+  tracking:
+    enabled: true
+    ticketing_system: null
+
+# ============================================================================
+# DEVELOPMENT & DEBUG
+# ============================================================================
+
+development:
+  # Debug mode (DISABLE in production)
+  debug_mode: false
+
+  # Allow insecure features for testing
+  allow_insecure: false
+
+  # Test credentials
+  test_credentials_enabled: false
+
+# ============================================================================
+# VERSION & METADATA
+# ============================================================================
+
+metadata:
+  config_version: "1.0"
+  last_updated: "2024-11-22"
+  updated_by: "security-team"
+  review_date: "2025-02-22"

@@ -1,0 +1,241 @@
+name: Firmware Build
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'roip-firmware/**'
+      - 'platformio.ini'
+      - '.github/workflows/firmware-build.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'roip-firmware/**'
+      - 'platformio.ini'
+      - '.github/workflows/firmware-build.yml'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Build environment'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - esp32-roip
+          - esp32s2-roip
+          - esp32s3-roip
+          - esp32c3-roip
+          - esp32c5-roip
+          - esp32c6-roip
+          - esp32h2-roip
+
+env:
+  PLATFORMIO_CORE_DIR: .platformio
+
+jobs:
+  # ============================================================
+  # Build Matrix for all ESP32 variants
+  # ============================================================
+  build-firmware:
+    name: Build ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment:
+          - esp32-roip
+          - esp32s2-roip
+          - esp32s3-roip
+          - esp32c3-roip
+          - esp32c5-roip
+          - esp32c6-roip
+          - esp32h2-roip
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            .platformio
+            roip-firmware/.pio
+          key: ${{ runner.os }}-platformio-${{ hashFiles('**/platformio.ini') }}-${{ matrix.environment }}
+          restore-keys: |
+            ${{ runner.os }}-platformio-${{ hashFiles('**/platformio.ini') }}-
+            ${{ runner.os }}-platformio-
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade platformio
+
+      - name: Build firmware - ${{ matrix.environment }}
+        working-directory: roip-firmware
+        run: |
+          echo "Building firmware for ${{ matrix.environment }}..."
+          pio run -e ${{ matrix.environment }}
+
+      - name: Build firmware test - ${{ matrix.environment }}
+        working-directory: roip-firmware
+        run: |
+          echo "Building test firmware for ${{ matrix.environment }}-test..."
+          pio run -e ${{ matrix.environment }}-test
+
+      - name: Get firmware info
+        id: firmware_info
+        working-directory: roip-firmware
+        run: |
+          # Get firmware size
+          FIRMWARE_SIZE=$(ls -lh .pio/build/${{ matrix.environment }}/firmware.bin | awk '{print $5}')
+          echo "firmware_size=$FIRMWARE_SIZE" >> $GITHUB_OUTPUT
+
+          # Get memory usage
+          pio run -e ${{ matrix.environment }} --target size > size_info.txt 2>&1 || true
+          echo "Size information:"
+          cat size_info.txt
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.environment }}-${{ github.sha }}
+          path: |
+            roip-firmware/.pio/build/${{ matrix.environment }}/firmware.bin
+            roip-firmware/.pio/build/${{ matrix.environment }}/firmware.elf
+          retention-days: 30
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-info-${{ matrix.environment }}-${{ github.sha }}
+          path: |
+            roip-firmware/.pio/build/${{ matrix.environment }}/*.map
+            roip-firmware/size_info.txt
+          retention-days: 7
+
+  # ============================================================
+  # Run firmware unit tests
+  # ============================================================
+  test-firmware:
+    name: Test firmware
+    runs-on: ubuntu-latest
+    needs: build-firmware
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            .platformio
+            roip-firmware/.pio
+          key: ${{ runner.os }}-platformio-test-${{ hashFiles('**/platformio.ini') }}
+          restore-keys: |
+            ${{ runner.os }}-platformio-
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade platformio
+
+      - name: Run unit tests
+        working-directory: roip-firmware
+        run: |
+          echo "Running firmware unit tests..."
+          # Run tests for the main platform (ESP32-S3)
+          pio test -e esp32s3-roip-test --without-uploading --without-building
+
+      - name: Generate test report
+        if: always()
+        run: |
+          echo "# Firmware Test Results" > test-report.md
+          echo "Test execution completed on $(date)" >> test-report.md
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-test-results-${{ github.sha }}
+          path: |
+            test-report.md
+            roip-firmware/.pio/build/*/test_output.xml
+          retention-days: 7
+
+  # ============================================================
+  # Build summary and status check
+  # ============================================================
+  build-summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [build-firmware, test-firmware]
+    if: always()
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate build summary
+        run: |
+          echo "# ESP32 RoIP Firmware Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Triggered by:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Build Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # List all firmware builds
+          echo "### Firmware Builds" >> $GITHUB_STEP_SUMMARY
+          echo "| Variant | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          for variant in esp32 esp32s2 esp32s3 esp32c3 esp32c5 esp32c6 esp32h2; do
+            if [ -d "artifacts/firmware-${variant}-roip-${{ github.sha }}" ]; then
+              SIZE=$(ls -lh artifacts/firmware-${variant}-roip-${{ github.sha }}/firmware.bin 2>/dev/null | awk '{print $5}' || echo "N/A")
+              echo "| ${variant}-roip | ✅ Success (${SIZE}) |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| ${variant}-roip | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- Firmware binaries uploaded for all variants" >> $GITHUB_STEP_SUMMARY
+          echo "- Build information and memory maps available" >> $GITHUB_STEP_SUMMARY
+          echo "- Test results included" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check build status
+        run: |
+          if [ "${{ needs.build-firmware.result }}" == "failure" ]; then
+            echo "❌ Firmware build failed"
+            exit 1
+          fi
+          if [ "${{ needs.test-firmware.result }}" == "failure" ]; then
+            echo "⚠️  Tests failed but build succeeded"
+            exit 1
+          fi
+          echo "✅ All builds and tests passed"

@@ -19,11 +19,14 @@
 #include "../include/config.h"
 #include <cstring>
 
+// Forward declare Serial for logging
+extern HardwareSerial Serial;
+
 // Enable debug logging
 #define CONFIG_DEBUG 1
 
 #if CONFIG_DEBUG
-#define LOG_CONFIG(fmt, ...) Serial.printf("[CONFIG] " fmt "\n", ##__VA_ARGS__)
+#define LOG_CONFIG(fmt, ...) do { if (Serial) { Serial.printf("[CONFIG] " fmt "\n", ##__VA_ARGS__); } } while(0)
 #else
 #define LOG_CONFIG(fmt, ...) do {} while(0)
 #endif
@@ -31,70 +34,73 @@
 // JSON document size for ArduinoJson
 #define JSON_BUFFER_SIZE 4096
 
-// Default configuration values
-const RoIPConfig DEFAULT_CONFIG = {
+// Helper function to create default configuration
+static RoIPConfig createDefaultConfig() {
+    RoIPConfig cfg;
+    memset(&cfg, 0, sizeof(cfg));
+
     // Device identity
-    .device_name = "RoIP-Device",
-    .device_id = "",  // Will be generated
+    strlcpy(cfg.device_name, "RoIP-Device", sizeof(cfg.device_name));
 
     // Network settings
-    .wifi_ssid = "",
-    .wifi_password = "",
-    .wifi_hostname = "roip-device",
-    .wifi_5ghz_enabled = true,
+    strlcpy(cfg.wifi_hostname, "roip-device", sizeof(cfg.wifi_hostname));
+    cfg.wifi_5ghz_enabled = true;
 
     // SIP server settings
-    .sip_server = "192.168.1.100",
-    .sip_port = SIP_PORT,
-    .sip_username = "user",
-    .sip_password = "password",
-    .sip_realm = "roip.local",
+    strlcpy(cfg.sip_server, "192.168.1.100", sizeof(cfg.sip_server));
+    cfg.sip_port = SIP_PORT;
+    strlcpy(cfg.sip_username, "user", sizeof(cfg.sip_username));
+    strlcpy(cfg.sip_password, "password", sizeof(cfg.sip_password));
+    strlcpy(cfg.sip_realm, "roip.local", sizeof(cfg.sip_realm));
 
     // STUN/TURN settings
-    .stun_server = "stun.l.google.com",
-    .stun_port = 3478,
-    .turn_server = "turn.example.com",
-    .turn_port = 3478,
-    .turn_username = "",
-    .turn_password = "",
+    strlcpy(cfg.stun_server, "stun.l.google.com", sizeof(cfg.stun_server));
+    cfg.stun_port = 3478;
+    strlcpy(cfg.turn_server, "turn.example.com", sizeof(cfg.turn_server));
+    cfg.turn_port = 3478;
 
     // Audio settings
-    .sample_rate = AUDIO_SAMPLE_RATE,
-    .frame_size_ms = AUDIO_FRAME_SIZE_MS,
-    .opus_bitrate = OPUS_BITRATE,
-    .opus_complexity = OPUS_COMPLEXITY,
+    cfg.sample_rate = AUDIO_SAMPLE_RATE;
+    cfg.frame_size_ms = AUDIO_FRAME_SIZE_MS;
+    cfg.opus_bitrate = OPUS_BITRATE;
+    cfg.opus_complexity = OPUS_COMPLEXITY;
 
     // DSP settings
-    .agc_enabled = true,
-    .agc_target_db = AGC_TARGET_LEVEL_DB,
-    .noise_suppression_enabled = true,
-    .vad_enabled = true,
-    .aec_enabled = false,  // Disabled by default due to complexity
+    cfg.agc_enabled = true;
+    cfg.agc_target_db = AGC_TARGET_LEVEL_DB;
+    cfg.noise_suppression_enabled = true;
+    cfg.vad_enabled = true;
+    cfg.aec_enabled = false;
 
     // PTT/COS settings
-    .ptt_active_high = true,
-    .cos_active_high = false,
-    .ptt_tail_ms = PTT_TAIL_DELAY_MS,
-    .cos_debounce_ms = COS_DEBOUNCE_MS,
-    .vox_enabled = false,
-    .vox_threshold_db = VOX_THRESHOLD_DB,
-    .vox_hangtime_ms = VOX_HANGTIME_MS,
+    cfg.ptt_active_high = true;
+    cfg.cos_active_high = false;
+    cfg.ptt_tail_ms = PTT_TAIL_DELAY_MS;
+    cfg.cos_debounce_ms = COS_DEBOUNCE_MS;
+    cfg.vox_enabled = false;
+    cfg.vox_threshold_db = VOX_THRESHOLD_DB;
+    cfg.vox_hangtime_ms = VOX_HANGTIME_MS;
 
     // Quality settings
-    .audio_quality_preset = 1,  // Medium quality
-    .fec_enabled = true,
-    .dtx_enabled = true,
+    cfg.audio_quality_preset = 1;  // Medium quality
+    cfg.fec_enabled = true;
+    cfg.dtx_enabled = true;
 
     // System settings
-    .log_level = 2,  // INFO level
-    .web_ui_enabled = true,
-    .web_ui_port = 80,
-    .admin_password = "admin123",
+    cfg.log_level = 2;  // INFO level
+    cfg.web_ui_enabled = true;
+    cfg.web_ui_port = 80;
+    strlcpy(cfg.admin_password, "admin123", sizeof(cfg.admin_password));
 
     // Runtime flags
-    .config_version = CONFIG_VERSION,
-    .uptime_seconds = 0,
-};
+    cfg.config_version = CONFIG_VERSION;
+    cfg.uptime_seconds = 0;
+
+    return cfg;
+}
+
+// Static default configuration instance
+static const RoIPConfig DEFAULT_CONFIG = createDefaultConfig();
 
 /**
  * Constructor - Initialize configuration manager

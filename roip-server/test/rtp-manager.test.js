@@ -4,6 +4,7 @@
  * audio mixing, and packet forwarding
  */
 
+import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import { RTPManager } from '../src/rtp/rtp-manager.js';
 
 describe('RTP Manager Tests', () => {

@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: roip-production
+  labels:
+    name: roip-production
+    environment: production
+    app: roip-system

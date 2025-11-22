@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: roip-production
+  labels:
+    app: postgres
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: fast-ssd  # Use appropriate storage class
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: roip-data-pvc
+  namespace: roip-production
+  labels:
+    app: roip-server
+spec:
+  accessModes:
+  - ReadWriteMany  # Multiple pods can access
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: roip-recordings-pvc
+  namespace: roip-production
+  labels:
+    app: roip-server
+spec:
+  accessModes:
+  - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: standard

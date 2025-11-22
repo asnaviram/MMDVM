@@ -1,0 +1,322 @@
+name: Security Scan
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run daily at 2:00 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  # ============================================================
+  # npm audit for Node.js dependencies
+  # ============================================================
+  npm-audit:
+    name: NPM Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: roip-server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: roip-server
+        run: npm ci
+
+      - name: Run npm audit
+        working-directory: roip-server
+        run: |
+          npm audit --json > npm-audit-report.json || true
+          npm audit
+
+      - name: Generate audit report
+        if: always()
+        working-directory: roip-server
+        run: |
+          echo "# NPM Security Audit Report" > npm-audit-summary.md
+          echo "" >> npm-audit-summary.md
+          echo "**Date:** $(date)" >> npm-audit-summary.md
+          echo "" >> npm-audit-summary.md
+          npm audit --audit-level=moderate || true
+
+      - name: Upload audit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report-${{ github.sha }}
+          path: |
+            roip-server/npm-audit-report.json
+            roip-server/npm-audit-summary.md
+          retention-days: 30
+
+      - name: Check for critical vulnerabilities
+        working-directory: roip-server
+        run: |
+          # Fail if critical or high vulnerabilities are found
+          npm audit --audit-level=high
+
+  # ============================================================
+  # Dependency scanning with Dependabot alerts
+  # ============================================================
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          deny-licenses: GPL-3.0, AGPL-3.0
+
+  # ============================================================
+  # CodeQL SAST (Static Application Security Testing)
+  # ============================================================
+  codeql-analysis:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'javascript', 'cpp' ]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-extended,security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  # ============================================================
+  # Secret scanning with Gitleaks
+  # ============================================================
+  secret-scan:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  # ============================================================
+  # OWASP Dependency Check
+  # ============================================================
+  owasp-dependency-check:
+    name: OWASP Dependency Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run OWASP Dependency Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          project: 'ESP32-RoIP'
+          path: '.'
+          format: 'HTML'
+          out: 'dependency-check-report'
+
+      - name: Upload OWASP report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: owasp-dependency-check-report-${{ github.sha }}
+          path: dependency-check-report/
+          retention-days: 30
+
+  # ============================================================
+  # Container security scanning with Snyk
+  # ============================================================
+  snyk-scan:
+    name: Snyk Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name != 'schedule'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        working-directory: roip-server
+        run: npm ci
+
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/node@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: --severity-threshold=high --file=roip-server/package.json
+
+      - name: Run Snyk to check Docker image
+        uses: snyk/actions/docker@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: esp-roip-server:latest
+          args: --file=docker/Dockerfile
+
+  # ============================================================
+  # License compliance check
+  # ============================================================
+  license-check:
+    name: License Compliance
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install license-checker
+        run: npm install -g license-checker
+
+      - name: Check licenses
+        working-directory: roip-server
+        run: |
+          npm ci
+          license-checker --json --out licenses.json
+          license-checker --summary
+
+      - name: Upload license report
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-report-${{ github.sha }}
+          path: roip-server/licenses.json
+          retention-days: 30
+
+  # ============================================================
+  # Security summary
+  # ============================================================
+  security-summary:
+    name: Security Summary
+    runs-on: ubuntu-latest
+    needs: [npm-audit, codeql-analysis, secret-scan, owasp-dependency-check, license-check]
+    if: always()
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate security summary
+        run: |
+          echo "# Security Scan Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          # NPM Audit
+          if [ "${{ needs.npm-audit.result }}" == "success" ]; then
+            echo "| NPM Audit | ✅ No critical issues |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| NPM Audit | ⚠️  Issues found |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # CodeQL
+          if [ "${{ needs.codeql-analysis.result }}" == "success" ]; then
+            echo "| CodeQL Analysis | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| CodeQL Analysis | ⚠️  Issues found |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Secret Scanning
+          if [ "${{ needs.secret-scan.result }}" == "success" ]; then
+            echo "| Secret Scanning | ✅ No secrets found |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Secret Scanning | ❌ Secrets detected |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # OWASP
+          if [ "${{ needs.owasp-dependency-check.result }}" == "success" ]; then
+            echo "| OWASP Dependency Check | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| OWASP Dependency Check | ⚠️  Issues found |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # License Check
+          if [ "${{ needs.license-check.result }}" == "success" ]; then
+            echo "| License Compliance | ✅ Compliant |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| License Compliance | ⚠️  Review needed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Recommendations" >> $GITHUB_STEP_SUMMARY
+          echo "- Review all security reports in the artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- Address critical and high severity issues immediately" >> $GITHUB_STEP_SUMMARY
+          echo "- Update dependencies regularly using Dependabot" >> $GITHUB_STEP_SUMMARY
+          echo "- Monitor the Security tab for ongoing alerts" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check critical failures
+        run: |
+          if [ "${{ needs.secret-scan.result }}" == "failure" ]; then
+            echo "❌ Secret scanning failed - secrets detected!"
+            exit 1
+          fi
+
+          echo "✅ Security scan completed"
+
+          if [ "${{ needs.npm-audit.result }}" != "success" ] || \
+             [ "${{ needs.codeql-analysis.result }}" != "success" ] || \
+             [ "${{ needs.owasp-dependency-check.result }}" != "success" ]; then
+            echo "⚠️  Some security checks found issues - review required"
+          fi

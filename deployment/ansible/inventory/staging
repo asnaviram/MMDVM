@@ -1,0 +1,53 @@
+# RoIP Staging Inventory
+
+[all_in_one]
+roip-staging ansible_host=10.0.2.10 ansible_user=ubuntu
+
+[staging:children]
+all_in_one
+
+[staging:vars]
+# Environment
+environment=staging
+system_timezone=UTC
+
+# Application
+app_version=develop
+app_user=roip
+app_group=roip
+app_home=/opt/roip-server
+
+# Node.js
+nodejs_version=18
+
+# Database
+db_name=roip_staging
+db_user=roip_user
+db_password=staging_password_change_me
+db_host=localhost
+db_port=5432
+db_pool_size=10
+
+# RoIP Server
+roip_sip_port=5060
+roip_rtp_port_min=10000
+roip_rtp_port_max=10100
+roip_api_port=8080
+roip_websocket_port=8081
+
+# Security
+jwt_secret=staging_secret_change_me
+enable_ssl=false
+
+# TURN/STUN
+turn_server_host={{ ansible_default_ipv4.address }}
+turn_port=3478
+turn_username=roip
+turn_password=staging_turn_password
+turn_realm=roip.staging
+
+# Monitoring
+deploy_monitoring=false
+
+# Backup
+backup_enabled=false

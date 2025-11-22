@@ -1,0 +1,46 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: roip-config
+  namespace: roip-production
+data:
+  # Server configuration
+  SIP_PORT: "5060"
+  SIP_TRANSPORT: "udp"
+  SIP_REALM: "roip.local"
+  RTP_PORT_MIN: "10000"
+  RTP_PORT_MAX: "10100"
+
+  # API configuration
+  API_PORT: "8080"
+  WEBSOCKET_PORT: "8081"
+  API_CORS_ORIGINS: "https://roip.example.com"
+
+  # Database configuration
+  DB_TYPE: "postgresql"
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+  DB_NAME: "roip_production"
+  DB_USER: "roip_user"
+  DB_POOL_SIZE: "20"
+
+  # Logging
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+
+  # TURN/STUN
+  TURN_SERVER: "coturn-service"
+  TURN_PORT: "3478"
+  TURN_USERNAME: "roip"
+
+  # Network
+  ENABLE_STUN: "true"
+  ENABLE_TURN: "true"
+  NAT_DETECTION: "true"
+
+  # Performance
+  CLUSTER_MODE: "false"  # K8s handles scaling
+
+  # Monitoring
+  ENABLE_METRICS: "true"
+  METRICS_PORT: "9090"

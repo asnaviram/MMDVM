@@ -1,0 +1,16 @@
+---
+# RoIP Server Role - Handlers
+
+- name: reload systemd
+  systemd:
+    daemon_reload: yes
+
+- name: restart roip-server
+  systemd:
+    name: roip-server
+    state: restarted
+
+- name: reload roip-server
+  systemd:
+    name: roip-server
+    state: reloaded

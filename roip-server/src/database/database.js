@@ -516,8 +516,9 @@ export class DatabaseModule {
 
       if (this.config.type === 'sqlite') {
         const stmt = this.db.prepare(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`);
-        const info = stmt.run(...values);
-        return { changes: info.changes };
+        stmt.run(...values);
+        // Return the updated record
+        return this.getUserById(userId);
       } else {
         const result = await this.pgPool.query(
           `UPDATE users SET ${fields.join(', ')} WHERE id = $${paramIndex + 1} RETURNING *`,
@@ -674,8 +675,9 @@ export class DatabaseModule {
 
       if (this.config.type === 'sqlite') {
         const stmt = this.db.prepare(`UPDATE devices SET ${fields.join(', ')} WHERE id = ?`);
-        const info = stmt.run(...values);
-        return { changes: info.changes };
+        stmt.run(...values);
+        // Return the updated record
+        return this.getDeviceById(deviceId);
       } else {
         const result = await this.pgPool.query(
           `UPDATE devices SET ${fields.join(', ')} WHERE id = $${paramIndex + 1} RETURNING *`,
@@ -831,8 +833,9 @@ export class DatabaseModule {
 
       if (this.config.type === 'sqlite') {
         const stmt = this.db.prepare(`UPDATE routes SET ${fields.join(', ')} WHERE id = ?`);
-        const info = stmt.run(...values);
-        return { changes: info.changes };
+        stmt.run(...values);
+        // Return the updated record
+        return this.getRouteById(routeId);
       } else {
         const result = await this.pgPool.query(
           `UPDATE routes SET ${fields.join(', ')} WHERE id = $${paramIndex + 1} RETURNING *`,
@@ -1007,8 +1010,9 @@ export class DatabaseModule {
 
       if (this.config.type === 'sqlite') {
         const stmt = this.db.prepare(`UPDATE call_logs SET ${fields.join(', ')} WHERE id = ?`);
-        const info = stmt.run(...values);
-        return { changes: info.changes };
+        stmt.run(...values);
+        // Return the updated record
+        return this.getCallLogById(callLogId);
       } else {
         const result = await this.pgPool.query(
           `UPDATE call_logs SET ${fields.join(', ')} WHERE id = $${paramIndex + 1} RETURNING *`,
@@ -1042,8 +1046,9 @@ export class DatabaseModule {
         const stmt = this.db.prepare(
           'UPDATE call_logs SET end_time = ?, duration_seconds = ?, call_status = ? WHERE id = ?'
         );
-        const info = stmt.run(endTime, durationSeconds, finalStatus, callLogId);
-        return { changes: info.changes };
+        stmt.run(endTime, durationSeconds, finalStatus, callLogId);
+        // Return the updated record
+        return this.getCallLogById(callLogId);
       } else {
         const result = await this.pgPool.query(
           'UPDATE call_logs SET end_time = $1, duration_seconds = $2, call_status = $3 WHERE id = $4 RETURNING *',
@@ -1149,8 +1154,9 @@ export class DatabaseModule {
 
       if (this.config.type === 'sqlite') {
         const stmt = this.db.prepare(`UPDATE recordings SET ${fields.join(', ')} WHERE id = ?`);
-        const info = stmt.run(...values);
-        return { changes: info.changes };
+        stmt.run(...values);
+        // Return the updated record
+        return this.getRecordingById(recordingId);
       } else {
         const result = await this.pgPool.query(
           `UPDATE recordings SET ${fields.join(', ')} WHERE id = $${paramIndex + 1} RETURNING *`,

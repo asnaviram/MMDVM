@@ -200,6 +200,7 @@ private:
     Preferences prefs;
 
     void applyQualityPreset(uint8_t preset);
+    bool validateConfiguration();
 };
 
 #endif // ROIP_CONFIG_H

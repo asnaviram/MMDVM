@@ -1,0 +1,87 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: roip-ingress
+  namespace: roip-production
+  annotations:
+    # Nginx ingress controller
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+
+    # Rate limiting
+    nginx.ingress.kubernetes.io/limit-rps: "10"
+    nginx.ingress.kubernetes.io/limit-connections: "10"
+
+    # CORS
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "https://roip.example.com"
+
+    # WebSocket support
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+
+    # Certificate manager (if using cert-manager)
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+    # Security headers
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Frame-Options: SAMEORIGIN";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-XSS-Protection: 1; mode=block";
+      more_set_headers "Referrer-Policy: no-referrer-when-downgrade";
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - roip.example.com
+    - api.roip.example.com
+    secretName: roip-tls-secret
+  rules:
+  - host: api.roip.example.com
+    http:
+      paths:
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: roip-server-service
+            port:
+              number: 8080
+      - path: /ws
+        pathType: Prefix
+        backend:
+          service:
+            name: roip-server-service
+            port:
+              number: 8081
+      - path: /health
+        pathType: Exact
+        backend:
+          service:
+            name: roip-server-service
+            port:
+              number: 8080
+
+---
+# Optional: Separate ingress for metrics (internal only)
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: roip-metrics-ingress
+  namespace: roip-production
+  annotations:
+    nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8,172.16.0.0/12"  # Internal IPs only
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: metrics.roip.internal
+    http:
+      paths:
+      - path: /metrics
+        pathType: Prefix
+        backend:
+          service:
+            name: roip-server-service
+            port:
+              number: 9090

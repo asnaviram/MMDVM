@@ -1055,10 +1055,10 @@ export class SIPServer extends EventEmitter {
    * Parse Expires header
    */
   parseExpires(msg) {
-    if (msg.contact && msg.contact.params && msg.contact.params.expires) {
+    if (msg.contact && msg.contact.params && msg.contact.params.expires !== undefined) {
       return parseInt(msg.contact.params.expires);
     }
-    if (msg.expires) {
+    if (msg.expires !== undefined) {
       return msg.expires;
     }
     return this.registrationExpiry;

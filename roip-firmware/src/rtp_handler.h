@@ -353,10 +353,11 @@ private:
     // Helper methods
     uint32_t generateSSRC();
     void generateNTPTimestamp(uint32_t& msw, uint32_t& lsw);
-    uint32_t ntohl(uint32_t value) const;
-    uint16_t ntohs(uint16_t value) const;
-    uint32_t htonl(uint32_t value) const;
-    uint16_t htons(uint16_t value) const;
+    // Note: Using lwip's ntohl, ntohs, htonl, htons instead of custom implementations
+    // uint32_t ntohl(uint32_t value) const;
+    // uint16_t ntohs(uint16_t value) const;
+    // uint32_t htonl(uint32_t value) const;
+    // uint16_t htons(uint16_t value) const;
 
     void updateSenderStatistics(uint16_t payload_length);
     void updateReceiverStatistics(const RTPPacket& packet);
@@ -375,10 +376,11 @@ private:
 
 class NetworkUtils {
 public:
-    static uint32_t ntohl(uint32_t value);
-    static uint16_t ntohs(uint16_t value);
-    static uint32_t htonl(uint32_t value);
-    static uint16_t htons(uint16_t value);
+    // Note: Using lwip's ntohl, ntohs, htonl, htons instead of custom implementations
+    // static uint32_t ntohl(uint32_t value);
+    // static uint16_t ntohs(uint16_t value);
+    // static uint32_t htonl(uint32_t value);
+    // static uint16_t htons(uint16_t value);
 
     static uint64_t getCurrentNTPTimestamp();
     static void getNTPTimestamp(uint32_t& msw, uint32_t& lsw);

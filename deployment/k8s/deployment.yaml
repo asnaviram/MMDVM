@@ -1,0 +1,236 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: roip-server
+  namespace: roip-production
+  labels:
+    app: roip-server
+    version: v1
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: roip-server
+  template:
+    metadata:
+      labels:
+        app: roip-server
+        version: v1
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: roip-server
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+      - name: roip-server
+        image: roip-server:latest
+        imagePullPolicy: Always
+        ports:
+        - name: sip
+          containerPort: 5060
+          protocol: UDP
+        - name: api
+          containerPort: 8080
+          protocol: TCP
+        - name: websocket
+          containerPort: 8081
+          protocol: TCP
+        - name: metrics
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: NODE_ENV
+          value: "production"
+        envFrom:
+        - configMapRef:
+            name: roip-config
+        - secretRef:
+            name: roip-secrets
+        resources:
+          requests:
+            cpu: 1000m
+            memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+        - name: logs
+          mountPath: /app/logs
+        - name: recordings
+          mountPath: /app/recordings
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: roip-data-pvc
+      - name: logs
+        emptyDir: {}
+      - name: recordings
+        persistentVolumeClaim:
+          claimName: roip-recordings-pvc
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: roip-production
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: roip-config
+              key: DB_NAME
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: roip-config
+              key: DB_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: roip-secrets
+              key: DB_PASSWORD
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+        resources:
+          requests:
+            cpu: 500m
+            memory: 1Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        livenessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - roip_user
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - pg_isready
+            - -U
+            - roip_user
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coturn
+  namespace: roip-production
+  labels:
+    app: coturn
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coturn
+  template:
+    metadata:
+      labels:
+        app: coturn
+    spec:
+      hostNetwork: true  # Required for proper NAT traversal
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+      - name: coturn
+        image: coturn/coturn:4.6-alpine
+        ports:
+        - containerPort: 3478
+          protocol: UDP
+          name: stun-udp
+        - containerPort: 3478
+          protocol: TCP
+          name: stun-tcp
+        - containerPort: 5349
+          protocol: TCP
+          name: turns
+        env:
+        - name: DETECT_EXTERNAL_IP
+          value: "yes"
+        - name: DETECT_RELAY_IP
+          value: "yes"
+        volumeMounts:
+        - name: coturn-config
+          mountPath: /etc/coturn
+          readOnly: true
+        - name: coturn-data
+          mountPath: /var/lib/coturn
+        resources:
+          requests:
+            cpu: 500m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 2Gi
+      volumes:
+      - name: coturn-config
+        configMap:
+          name: coturn-config
+      - name: coturn-data
+        emptyDir: {}

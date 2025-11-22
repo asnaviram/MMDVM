@@ -4,6 +4,7 @@
  * call logs, and query helpers
  */
 
+import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import { DatabaseModule } from '../src/database/database.js';
 import fs from 'fs';
 import path from 'path';

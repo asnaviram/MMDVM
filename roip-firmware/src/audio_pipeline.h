@@ -94,7 +94,7 @@
 
 // ADC configuration
 #define AUDIO_ADC_RESOLUTION       ADC_WIDTH_BIT_12
-#define AUDIO_ADC_ATTEN            ADC_ATTEN_DB_11     // Full scale ~3.3V
+#define AUDIO_ADC_ATTEN            ADC_ATTEN_DB_12     // Full scale ~3.3V
 
 // PWM DAC configuration (for variants without built-in DAC)
 #ifdef AUDIO_USE_PWM_DAC
@@ -374,6 +374,7 @@ private:
   bool m_running;
   gpio_num_t m_rx_pin;
   gpio_num_t m_tx_pin;
+  adc1_channel_t m_rx_channel;  // ADC1 channel for RX pin
 
   // Circular ring buffers
   AudioRingBuffer* m_rx_buffer;
@@ -405,15 +406,16 @@ private:
   void cleanupDAC();
   void updateStatistics(int16_t sample);
   int16_t applyGain(int16_t sample, float gain);
+  adc1_channel_t gpioToADC1Channel(gpio_num_t gpio);
 
   // Static ISR handler wrapper
-  friend void IRAM_ATTR audioTimerISR(void* arg);
+  friend bool IRAM_ATTR audioTimerISR(void* arg);
 };
 
 // Global singleton instance and ISR handler
 extern AudioPipeline g_audioPipeline;
 
 // ISR handler function (defined in cpp)
-extern void IRAM_ATTR audioTimerISR(void* arg);
+extern bool IRAM_ATTR audioTimerISR(void* arg);
 
 #endif // AUDIO_PIPELINE_H

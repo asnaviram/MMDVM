@@ -1,0 +1,311 @@
+name: Docker Build
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags:
+      - 'v*.*.*'
+    paths:
+      - 'roip-server/**'
+      - 'docker/**'
+      - '.github/workflows/docker-build.yml'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - 'roip-server/**'
+      - 'docker/**'
+      - '.github/workflows/docker-build.yml'
+  workflow_dispatch:
+
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: esp-roip-server
+
+jobs:
+  # ============================================================
+  # Build Docker image
+  # ============================================================
+  build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tags }}
+      image_digest: ${{ steps.build.outputs.digest }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ steps.meta.outputs.version }}
+
+      - name: Export image for scanning
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:test
+          cache-from: type=gha
+
+  # ============================================================
+  # Security scanning with Trivy
+  # ============================================================
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for scanning
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:scan
+          cache-from: type=gha
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:scan
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Run Trivy for detailed report
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_NAME }}:scan
+          format: 'table'
+          output: 'trivy-report.txt'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+
+      - name: Upload Trivy report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-security-report-${{ github.sha }}
+          path: trivy-report.txt
+          retention-days: 30
+
+      - name: Check for critical vulnerabilities
+        run: |
+          if grep -q "CRITICAL" trivy-report.txt; then
+            echo "⚠️  Critical vulnerabilities found!"
+            cat trivy-report.txt
+            exit 1
+          fi
+
+  # ============================================================
+  # Test Docker Compose deployment
+  # ============================================================
+  test-deployment:
+    name: Test Docker Compose
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image for testing
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:test
+          cache-from: type=gha
+
+      - name: Create environment file
+        working-directory: docker
+        run: |
+          cat > .env << EOF
+          NODE_ENV=production
+          DB_NAME=roip
+          DB_USER=roip
+          DB_PASSWORD=test_password
+          JWT_SECRET=test-jwt-secret
+          LOG_LEVEL=info
+          EOF
+
+      - name: Start services with Docker Compose
+        working-directory: docker
+        run: |
+          # Use the locally built image
+          export IMAGE_TAG=test
+          docker-compose up -d
+
+      - name: Wait for services to be ready
+        run: |
+          echo "Waiting for services to start..."
+          sleep 30
+
+          # Check PostgreSQL
+          docker exec roip-postgres pg_isready -U roip
+
+          # Check server health
+          timeout 60 bash -c 'until curl -f http://localhost:8080/health; do sleep 5; done'
+
+      - name: Run deployment tests
+        run: |
+          # Test API endpoint
+          curl -f http://localhost:8080/health || exit 1
+
+          # Test WebSocket endpoint
+          curl -f http://localhost:8081/ || exit 1
+
+          echo "✅ Deployment test successful"
+
+      - name: Check service logs
+        if: always()
+        working-directory: docker
+        run: |
+          echo "=== RoIP Server Logs ==="
+          docker-compose logs roip-server
+
+          echo "=== PostgreSQL Logs ==="
+          docker-compose logs postgres
+
+          echo "=== Coturn Logs ==="
+          docker-compose logs coturn
+
+      - name: Stop services
+        if: always()
+        working-directory: docker
+        run: docker-compose down -v
+
+  # ============================================================
+  # Build summary
+  # ============================================================
+  build-summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [build, security-scan, test-deployment]
+    if: always()
+
+    steps:
+      - name: Generate build summary
+        run: |
+          echo "# Docker Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          # Build status
+          if [ "${{ needs.build.result }}" == "success" ]; then
+            echo "| Docker Build | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Docker Build | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Security scan status
+          if [ "${{ needs.security-scan.result }}" == "success" ]; then
+            echo "| Security Scan | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Security Scan | ⚠️  Issues Found |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          # Deployment test status
+          if [ "${{ needs.test-deployment.result }}" == "success" ]; then
+            echo "| Deployment Test | ✅ Passed |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Deployment Test | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Image information
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "## Published Images" >> $GITHUB_STEP_SUMMARY
+            echo "Images have been pushed to Docker Hub" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Digest:** \`${{ needs.build.outputs.image_digest }}\`" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Check overall status
+        run: |
+          if [ "${{ needs.build.result }}" != "success" ]; then
+            echo "❌ Docker build failed"
+            exit 1
+          fi
+          if [ "${{ needs.test-deployment.result }}" != "success" ]; then
+            echo "❌ Deployment test failed"
+            exit 1
+          fi
+          if [ "${{ needs.security-scan.result }}" != "success" ]; then
+            echo "⚠️  Security scan found issues"
+            # Don't fail on security issues, just warn
+          fi
+          echo "✅ Docker build and tests completed successfully"

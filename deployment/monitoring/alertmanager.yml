@@ -1,0 +1,115 @@
+global:
+  resolve_timeout: 5m
+  smtp_smarthost: 'smtp.example.com:587'
+  smtp_from: 'alerts@roip.example.com'
+  smtp_auth_username: 'alerts@roip.example.com'
+  smtp_auth_password: 'CHANGE_ME'
+  smtp_require_tls: true
+
+# Templates for notifications
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'
+
+# Route tree
+route:
+  receiver: 'default'
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+
+  routes:
+    # Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'critical'
+      group_wait: 10s
+      repeat_interval: 5m
+
+    # Warning alerts - grouped notifications
+    - match:
+        severity: warning
+      receiver: 'warning'
+      group_wait: 30s
+      repeat_interval: 1h
+
+    # Database alerts
+    - match:
+        alertname: DatabaseDown
+      receiver: 'database-team'
+      group_wait: 10s
+      repeat_interval: 5m
+
+    # Network alerts
+    - match_re:
+        alertname: '(TURNServerDown|HighPacketLoss|HighJitter|HighLatency)'
+      receiver: 'network-team'
+
+# Inhibition rules
+inhibit_rules:
+  # Don't alert on high CPU if server is down
+  - source_match:
+      alertname: 'RoIPServerDown'
+    target_match_re:
+      alertname: '(HighCPUUsage|HighMemoryUsage)'
+    equal: ['instance']
+
+  # Don't send warning if critical alert is firing
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'instance']
+
+# Receivers
+receivers:
+  - name: 'default'
+    email_configs:
+      - to: 'ops@example.com'
+        headers:
+          Subject: '[RoIP] {{ .GroupLabels.alertname }}'
+
+  - name: 'critical'
+    email_configs:
+      - to: 'ops@example.com,oncall@example.com'
+        headers:
+          Subject: '[CRITICAL] RoIP Alert: {{ .GroupLabels.alertname }}'
+    # Slack integration
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+        channel: '#roip-critical'
+        title: 'Critical Alert'
+        text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+        send_resolved: true
+    # PagerDuty integration
+    pagerduty_configs:
+      - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
+        severity: 'critical'
+
+  - name: 'warning'
+    email_configs:
+      - to: 'ops@example.com'
+        headers:
+          Subject: '[WARNING] RoIP Alert: {{ .GroupLabels.alertname }}'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK'
+        channel: '#roip-alerts'
+        send_resolved: true
+
+  - name: 'database-team'
+    email_configs:
+      - to: 'dba@example.com'
+        headers:
+          Subject: '[DATABASE] RoIP Alert: {{ .GroupLabels.alertname }}'
+
+  - name: 'network-team'
+    email_configs:
+      - to: 'network@example.com'
+        headers:
+          Subject: '[NETWORK] RoIP Alert: {{ .GroupLabels.alertname }}'
+
+  # Webhook receiver (for custom integrations)
+  # - name: 'webhook'
+  #   webhook_configs:
+  #     - url: 'http://your-webhook-service:8080/alerts'
+  #       send_resolved: true

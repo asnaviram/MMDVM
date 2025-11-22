@@ -1,0 +1,120 @@
+version: 2
+
+updates:
+  # ============================================================
+  # NPM dependencies for RoIP Server
+  # ============================================================
+  - package-ecosystem: "npm"
+    directory: "/roip-server"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "esp32-roip-team"
+    assignees:
+      - "esp32-roip-team"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "server"
+      - "npm"
+    versioning-strategy: increase
+    allow:
+      - dependency-type: "all"
+    ignore:
+      # Ignore major version updates for these packages
+      - dependency-name: "express"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "ws"
+        update-types: ["version-update:semver-major"]
+
+  # ============================================================
+  # NPM dependencies for E2E tests
+  # ============================================================
+  - package-ecosystem: "npm"
+    directory: "/test/e2e"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(test)"
+    labels:
+      - "dependencies"
+      - "test"
+      - "npm"
+
+  # ============================================================
+  # Docker base images
+  # ============================================================
+  - package-ecosystem: "docker"
+    directory: "/docker"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "03:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(docker)"
+    labels:
+      - "dependencies"
+      - "docker"
+    ignore:
+      # Only update to latest stable versions
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # ============================================================
+  # GitHub Actions
+  # ============================================================
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "03:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "ci/cd"
+
+  # ============================================================
+  # PlatformIO (via pip)
+  # Note: Dependabot doesn't directly support PlatformIO, but we can
+  # track Python dependencies if we create a requirements.txt
+  # ============================================================
+  - package-ecosystem: "pip"
+    directory: "/roip-firmware"
+    schedule:
+      interval: "monthly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(firmware)"
+    labels:
+      - "dependencies"
+      - "firmware"
+      - "platformio"
+    # Only update if requirements.txt exists
+    # This would need to be created separately
+
+# ============================================================
+# Dependabot Security Updates
+# ============================================================
+# Security updates are enabled by default and run automatically
+# when vulnerabilities are detected in dependencies.
+#
+# To configure security update behavior:
+# 1. Go to repository Settings > Security & analysis
+# 2. Enable "Dependabot security updates"
+# 3. Configure notification preferences
+# ============================================================

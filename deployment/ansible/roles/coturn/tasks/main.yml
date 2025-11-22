@@ -1,0 +1,59 @@
+---
+# Coturn TURN/STUN Server Role - Main Tasks
+
+- name: Install Coturn
+  package:
+    name: coturn
+    state: present
+
+- name: Enable Coturn service
+  lineinfile:
+    path: /etc/default/coturn
+    regexp: '^#?TURNSERVER_ENABLED='
+    line: 'TURNSERVER_ENABLED=1'
+    state: present
+
+- name: Deploy Coturn configuration
+  template:
+    src: turnserver.conf.j2
+    dest: /etc/turnserver.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: restart coturn
+
+- name: Create Coturn users file
+  template:
+    src: turnusers.txt.j2
+    dest: /etc/turnusers.txt
+    owner: turnserver
+    group: turnserver
+    mode: '0600'
+  notify: restart coturn
+
+- name: Create Coturn data directory
+  file:
+    path: /var/lib/coturn
+    state: directory
+    owner: turnserver
+    group: turnserver
+    mode: '0750'
+
+- name: Ensure Coturn is started and enabled
+  systemd:
+    name: coturn
+    state: started
+    enabled: yes
+
+- name: Configure firewall for TURN/STUN
+  ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+  loop:
+    - { port: "3478", proto: "tcp" }
+    - { port: "3478", proto: "udp" }
+    - { port: "5349", proto: "tcp" }
+    - { port: "5349", proto: "udp" }
+    - { port: "49152:65535", proto: "udp" }
+  when: ansible_os_family == "Debian"

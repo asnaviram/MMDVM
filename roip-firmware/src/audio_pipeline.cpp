@@ -139,14 +139,14 @@ uint8_t AudioRingBuffer::getUtilization() const {
 static AudioPipeline* g_pAudioPipeline = nullptr;
 
 // ISR-safe timer interrupt handler
-void IRAM_ATTR audioTimerISR(void* arg) {
+bool IRAM_ATTR audioTimerISR(void* arg) {
   AudioPipeline* pThis = (AudioPipeline*)arg;
   if (pThis == nullptr) {
-    return;
+    return false;
   }
 
   // Read ADC sample
-  uint16_t adc_raw = adc1_get_raw((adc1_channel_t)pThis->m_rx_pin);
+  uint16_t adc_raw = adc1_get_raw(pThis->m_rx_channel);
 
   // Convert from 12-bit ADC (0-4095) to signed 16-bit (-2048 to 2047)
   int16_t adc_sample = adc_raw - 2048;  // Center at 0
@@ -199,6 +199,8 @@ void IRAM_ATTR audioTimerISR(void* arg) {
 
   // Re-enable the alarm
   timer_group_enable_alarm_in_isr(AUDIO_TIMER_GROUP, AUDIO_TIMER_IDX);
+
+  return false;  // No higher priority task woken
 }
 
 // ============================================================================
@@ -210,6 +212,7 @@ AudioPipeline::AudioPipeline() :
   m_running(false),
   m_rx_pin(GPIO_NUM_NC),
   m_tx_pin(GPIO_NUM_NC),
+  m_rx_channel(ADC1_CHANNEL_MAX),
   m_rx_buffer(nullptr),
   m_tx_buffer(nullptr),
   m_rx_gain(1.0f),
@@ -250,6 +253,13 @@ audio_error_t AudioPipeline::begin(gpio_num_t rxPin, gpio_num_t txPin) {
 
   m_rx_pin = rxPin;
   m_tx_pin = txPin;
+
+  // Convert GPIO pin to ADC1 channel
+  m_rx_channel = gpioToADC1Channel(rxPin);
+  if (m_rx_channel == ADC1_CHANNEL_MAX) {
+    AUDIO_LOGE("Invalid ADC1 pin: %d", rxPin);
+    return AUDIO_ERR_INVALID_PARAMETER;
+  }
 
   // Allocate ring buffers
   m_rx_buffer = new AudioRingBuffer(AUDIO_RINGBUFFER_SIZE);
@@ -560,16 +570,15 @@ audio_error_t AudioPipeline::initADC() {
   }
 
   // Configure ADC1 input pin
-  err = adc1_config_channel_atten(m_rx_pin, AUDIO_ADC_ATTEN);
+  err = adc1_config_channel_atten(m_rx_channel, AUDIO_ADC_ATTEN);
   if (err != ESP_OK) {
     AUDIO_LOGE("ADC channel config failed");
     return AUDIO_ERR_ADC_INIT_FAILED;
   }
 
-  // Disable ADC2 to prevent interference with WiFi
-  adc_power_on();
+  // ADC power management is now automatic in newer ESP-IDF
 
-  AUDIO_LOG("ADC initialized on pin %d", m_rx_pin);
+  AUDIO_LOG("ADC initialized on pin %d, channel %d", m_rx_pin, m_rx_channel);
   return AUDIO_ERR_OK;
 }
 
@@ -694,7 +703,7 @@ void AudioPipeline::cleanupTimer() {
 }
 
 void AudioPipeline::cleanupADC() {
-  adc_power_off();
+  // ADC power management is now automatic in newer ESP-IDF
 }
 
 void AudioPipeline::cleanupDAC() {
@@ -753,6 +762,41 @@ void AudioPipeline::updateStatistics(int16_t sample) {
     }
 
     m_stats_sample_count = 0;
+  }
+}
+
+adc1_channel_t AudioPipeline::gpioToADC1Channel(gpio_num_t gpio) {
+  // GPIO to ADC1 channel mapping for ESP32 variants
+  switch (gpio) {
+#if defined(ESP32)
+    case GPIO_NUM_36: return ADC1_CHANNEL_0;
+    case GPIO_NUM_37: return ADC1_CHANNEL_1;
+    case GPIO_NUM_38: return ADC1_CHANNEL_2;
+    case GPIO_NUM_39: return ADC1_CHANNEL_3;
+    case GPIO_NUM_32: return ADC1_CHANNEL_4;
+    case GPIO_NUM_33: return ADC1_CHANNEL_5;
+    case GPIO_NUM_34: return ADC1_CHANNEL_6;
+    case GPIO_NUM_35: return ADC1_CHANNEL_7;
+#elif defined(ESP32S2) || defined(ESP32S3)
+    case GPIO_NUM_1:  return ADC1_CHANNEL_0;
+    case GPIO_NUM_2:  return ADC1_CHANNEL_1;
+    case GPIO_NUM_3:  return ADC1_CHANNEL_2;
+    case GPIO_NUM_4:  return ADC1_CHANNEL_3;
+    case GPIO_NUM_5:  return ADC1_CHANNEL_4;
+    case GPIO_NUM_6:  return ADC1_CHANNEL_5;
+    case GPIO_NUM_7:  return ADC1_CHANNEL_6;
+    case GPIO_NUM_8:  return ADC1_CHANNEL_7;
+    case GPIO_NUM_9:  return ADC1_CHANNEL_8;
+    case GPIO_NUM_10: return ADC1_CHANNEL_9;
+#elif defined(ESP32C3) || defined(ESP32C6)
+    case GPIO_NUM_0:  return ADC1_CHANNEL_0;
+    case GPIO_NUM_1:  return ADC1_CHANNEL_1;
+    case GPIO_NUM_2:  return ADC1_CHANNEL_2;
+    case GPIO_NUM_3:  return ADC1_CHANNEL_3;
+    case GPIO_NUM_4:  return ADC1_CHANNEL_4;
+#endif
+    default:
+      return ADC1_CHANNEL_MAX;  // Invalid channel
   }
 }
 

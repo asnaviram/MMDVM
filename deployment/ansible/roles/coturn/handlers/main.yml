@@ -1,0 +1,12 @@
+---
+# Coturn Role - Handlers
+
+- name: restart coturn
+  systemd:
+    name: coturn
+    state: restarted
+
+- name: reload coturn
+  systemd:
+    name: coturn
+    state: reloaded

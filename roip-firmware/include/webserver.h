@@ -1,15 +1,14 @@
 /*
  * ESP32 RoIP - Web Server & REST API
- * Async HTTP server with WebSocket, REST API, OTA updates, and captive portal
+ * Synchronous HTTP server with REST API, OTA updates, and captive portal
  */
 
 #ifndef ROIP_WEBSERVER_H
 #define ROIP_WEBSERVER_H
 
 #include <Arduino.h>
-#include <ESPAsyncWebServer.h>
+#include <WebServer.h>
 #include <ArduinoJson.h>
-#include <AsyncTCP.h>
 #include "config.h"
 
 // Web server configuration
@@ -53,27 +52,24 @@ public:
     void stop();
     bool isRunning() const { return running; }
 
-    // WebSocket broadcast
-    void broadcastSystemStatus();
-    void broadcastAudioStatus();
-    void broadcastNetworkStatus();
-    void broadcastConfigChanged();
-    void broadcastError(const char* error);
+    // Status methods
+    void updateSystemStatus();
+    void updateAudioStatus();
+    void updateNetworkStatus();
 
     // Authentication
-    bool verifyAuth(AsyncWebServerRequest* request);
+    bool verifyAuth();
     void setAdminPassword(const char* password);
 
     // Captive portal
     void enableCaptivePortal(bool enable);
     bool isCaptivePortalMode() const { return captivePortalMode; }
 
-    // OTA update
-    void handleOTAUpdate(AsyncWebServerRequest* request, String filename,
-                        size_t index, uint8_t* data, size_t len, bool final);
+    // Request handling loop
+    void handleClient();
 
 private:
-    AsyncWebServer server;
+    WebServer server;
     ConfigManager* configManager;
     bool running;
     bool captivePortalMode;
@@ -87,73 +83,65 @@ private:
         bool valid;
     } sessionTokens[5];
 
-    // WebSocket clients
-    void onWSConnect(AsyncWebSocket* server, AsyncWebSocketClient* client);
-    void onWSDisconnect(AsyncWebSocket* server, AsyncWebSocketClient* client);
-    void onWSMessage(void* arg, uint8_t* data, size_t len);
-
     // Captive portal handlers
     void setupCaptivePortal();
-    void handleCaptivePortalRequest(AsyncWebServerRequest* request);
+    void handleCaptivePortalRequest();
 
     // REST API handlers
     void setupAPIRoutes();
 
     // System endpoints
-    void handleGetStatus(AsyncWebServerRequest* request);
-    void handleGetSystemInfo(AsyncWebServerRequest* request);
-    void handleGetHealth(AsyncWebServerRequest* request);
-    void handleRestart(AsyncWebServerRequest* request);
-    void handleFactoryReset(AsyncWebServerRequest* request);
+    void handleGetStatus();
+    void handleGetSystemInfo();
+    void handleGetHealth();
+    void handleRestart();
+    void handleFactoryReset();
 
     // Configuration endpoints
-    void handleGetConfig(AsyncWebServerRequest* request);
-    void handlePostConfig(AsyncWebServerRequest* request);
-    void handleGetConfigItem(AsyncWebServerRequest* request);
-    void handlePostConfigItem(AsyncWebServerRequest* request);
-    void handleExportConfig(AsyncWebServerRequest* request);
-    void handleImportConfig(AsyncWebServerRequest* request);
+    void handleGetConfig();
+    void handlePostConfig();
+    void handleGetConfigItem();
+    void handlePostConfigItem();
+    void handleExportConfig();
+    void handleImportConfig();
 
     // WiFi endpoints
-    void handleGetWiFiStatus(AsyncWebServerRequest* request);
-    void handlePostWiFi(AsyncWebServerRequest* request);
-    void handleGetWiFiNetworks(AsyncWebServerRequest* request);
+    void handleGetWiFiStatus();
+    void handlePostWiFi();
+    void handleGetWiFiNetworks();
 
     // Audio endpoints
-    void handleGetAudioStatus(AsyncWebServerRequest* request);
-    void handlePostAudio(AsyncWebServerRequest* request);
-    void handleGetAudioDevices(AsyncWebServerRequest* request);
+    void handleGetAudioStatus();
+    void handlePostAudio();
+    void handleGetAudioDevices();
 
     // Network endpoints
-    void handleGetNetworkStatus(AsyncWebServerRequest* request);
-    void handlePostNetwork(AsyncWebServerRequest* request);
+    void handleGetNetworkStatus();
+    void handlePostNetwork();
 
     // SIP endpoints
-    void handleGetSIPStatus(AsyncWebServerRequest* request);
-    void handlePostSIP(AsyncWebServerRequest* request);
+    void handleGetSIPStatus();
+    void handlePostSIP();
 
     // OTA endpoints
-    void handleGetOTAStatus(AsyncWebServerRequest* request);
-    void handlePostOTA(AsyncWebServerRequest* request);
+    void handleGetOTAStatus();
+    void handlePostOTA();
 
     // Authentication endpoints
-    void handleLogin(AsyncWebServerRequest* request);
-    void handleLogout(AsyncWebServerRequest* request);
-    void handleVerifyAuth(AsyncWebServerRequest* request);
+    void handleLogin();
+    void handleLogout();
+    void handleVerifyAuth();
 
     // Logging endpoints
-    void handleGetLogs(AsyncWebServerRequest* request);
-    void handleClearLogs(AsyncWebServerRequest* request);
+    void handleGetLogs();
+    void handleClearLogs();
 
     // Utility methods
     String generateAuthToken();
     bool validateAuthToken(const String& token);
     void updateActivityTime();
-    APIStatus handleJSONRequest(AsyncWebServerRequest* request,
-                                DynamicJsonDocument& doc);
-
-    // CORS headers
-    void addCORSHeaders(AsyncWebServerResponse* response);
+    void sendJSON(int code, const String& json);
+    void sendCORS();
 
     // Static content serving
     void setupStaticRoutes();

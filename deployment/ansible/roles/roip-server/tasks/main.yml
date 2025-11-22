@@ -1,0 +1,113 @@
+---
+# RoIP Server Role - Main Tasks
+
+- name: Install Node.js repository
+  shell: curl -fsSL https://deb.nodesource.com/setup_{{ nodejs_version }}.x | bash -
+  args:
+    creates: /etc/apt/sources.list.d/nodesource.list
+  when: ansible_os_family == "Debian"
+
+- name: Install Node.js
+  package:
+    name: nodejs
+    state: present
+
+- name: Create RoIP user
+  user:
+    name: "{{ app_user }}"
+    system: yes
+    shell: /bin/bash
+    home: "{{ app_home }}"
+    create_home: yes
+
+- name: Create application directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0755'
+  loop:
+    - "{{ app_home }}"
+    - "{{ app_home }}/logs"
+    - "{{ app_home }}/data"
+    - "{{ app_home }}/config"
+    - /var/log/roip
+
+- name: Clone RoIP server repository
+  git:
+    repo: "{{ roip_git_repo | default('https://github.com/yourorg/roip-server.git') }}"
+    dest: "{{ app_home }}/server"
+    version: "{{ app_version }}"
+    force: yes
+  become_user: "{{ app_user }}"
+  notify: restart roip-server
+
+- name: Install npm dependencies
+  npm:
+    path: "{{ app_home }}/server"
+    production: yes
+    state: present
+  become_user: "{{ app_user }}"
+
+- name: Deploy environment configuration
+  template:
+    src: env.j2
+    dest: "{{ app_home }}/server/.env"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0600'
+  notify: restart roip-server
+
+- name: Deploy server configuration
+  template:
+    src: config.yaml.j2
+    dest: "{{ app_home }}/config/server.yaml"
+    owner: "{{ app_user }}"
+    group: "{{ app_group }}"
+    mode: '0644'
+  notify: restart roip-server
+
+- name: Run database migrations
+  command: npm run migrate
+  args:
+    chdir: "{{ app_home }}/server"
+  become_user: "{{ app_user }}"
+  environment:
+    NODE_ENV: "{{ environment }}"
+  register: migration_result
+  changed_when: "'No migrations to run' not in migration_result.stdout"
+
+- name: Deploy systemd service
+  template:
+    src: roip-server.service.j2
+    dest: /etc/systemd/system/roip-server.service
+    mode: '0644'
+  notify:
+    - reload systemd
+    - restart roip-server
+
+- name: Configure log rotation
+  template:
+    src: logrotate.j2
+    dest: /etc/logrotate.d/roip-server
+    mode: '0644'
+
+- name: Enable and start RoIP server
+  systemd:
+    name: roip-server
+    enabled: yes
+    state: started
+    daemon_reload: yes
+
+- name: Configure firewall for RoIP
+  ufw:
+    rule: allow
+    port: "{{ item.port }}"
+    proto: "{{ item.proto }}"
+  loop:
+    - { port: "{{ roip_sip_port }}", proto: "udp" }
+    - { port: "{{ roip_api_port }}", proto: "tcp" }
+    - { port: "{{ roip_websocket_port }}", proto: "tcp" }
+    - { port: "{{ roip_rtp_port_min }}:{{ roip_rtp_port_max }}", proto: "udp" }
+  when: ansible_os_family == "Debian"

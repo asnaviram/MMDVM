@@ -1,0 +1,208 @@
+groups:
+  - name: roip_server_alerts
+    interval: 30s
+    rules:
+      # Service availability
+      - alert: RoIPServerDown
+        expr: up{job="roip-server"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RoIP server is down"
+          description: "RoIP server instance {{ $labels.instance }} has been down for more than 2 minutes."
+
+      # High CPU usage
+      - alert: HighCPUUsage
+        expr: (100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is above 80% on {{ $labels.instance }} (current value: {{ $value }}%)"
+
+      - alert: CriticalCPUUsage
+        expr: (100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)) > 90
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical CPU usage detected"
+          description: "CPU usage is above 90% on {{ $labels.instance }} (current value: {{ $value }}%)"
+
+      # High memory usage
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100) < 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage detected"
+          description: "Available memory is below 20% on {{ $labels.instance }} (current value: {{ $value }}%)"
+
+      - alert: CriticalMemoryUsage
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100) < 10
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical memory usage detected"
+          description: "Available memory is below 10% on {{ $labels.instance }} (current value: {{ $value }}%)"
+
+      # Disk space
+      - alert: LowDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100) < 20
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space is below 20% on {{ $labels.instance }} (current value: {{ $value }}%)"
+
+      - alert: CriticalDiskSpace
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"} * 100) < 10
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical disk space"
+          description: "Disk space is below 10% on {{ $labels.instance }} (current value: {{ $value }}%)"
+
+  - name: roip_application_alerts
+    interval: 30s
+    rules:
+      # Active calls
+      - alert: HighActiveCallCount
+        expr: roip_active_calls_total > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of active calls"
+          description: "Active call count is {{ $value }}, approaching capacity limit"
+
+      # Call failures
+      - alert: HighCallFailureRate
+        expr: rate(roip_calls_failed_total[5m]) / rate(roip_calls_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High call failure rate"
+          description: "Call failure rate is {{ $value | humanizePercentage }} over the last 5 minutes"
+
+      - alert: CriticalCallFailureRate
+        expr: rate(roip_calls_failed_total[5m]) / rate(roip_calls_total[5m]) > 0.10
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Critical call failure rate"
+          description: "Call failure rate is {{ $value | humanizePercentage }} over the last 5 minutes"
+
+      # API response time
+      - alert: SlowAPIResponses
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow API responses"
+          description: "95th percentile API response time is {{ $value }}s"
+
+      # Error rate
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP error rate"
+          description: "HTTP 5xx error rate is {{ $value | humanizePercentage }}"
+
+      # WebSocket connections
+      - alert: HighWebSocketConnectionFailures
+        expr: rate(websocket_connections_failed_total[5m]) > 5
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High WebSocket connection failure rate"
+          description: "WebSocket connections are failing at {{ $value }} per second"
+
+  - name: roip_database_alerts
+    interval: 30s
+    rules:
+      # Database connection pool
+      - alert: DatabaseConnectionPoolExhausted
+        expr: pg_stat_database_numbackends / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Database connection pool near exhaustion"
+          description: "Database connection pool is {{ $value | humanizePercentage }} full"
+
+      # Slow queries
+      - alert: SlowDatabaseQueries
+        expr: rate(pg_stat_statements_mean_time_seconds[5m]) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow database queries detected"
+          description: "Average query time is {{ $value }}s"
+
+      # Database down
+      - alert: DatabaseDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL database is down"
+          description: "PostgreSQL database {{ $labels.instance }} is unreachable"
+
+  - name: roip_network_alerts
+    interval: 30s
+    rules:
+      # TURN server availability
+      - alert: TURNServerDown
+        expr: up{job="coturn"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "TURN server is down"
+          description: "TURN server {{ $labels.instance }} is unreachable"
+
+      # High packet loss
+      - alert: HighPacketLoss
+        expr: roip_rtp_packet_loss_percent > 5
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High RTP packet loss"
+          description: "RTP packet loss is {{ $value }}%"
+
+      # High jitter
+      - alert: HighJitter
+        expr: roip_rtp_jitter_ms > 50
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High RTP jitter"
+          description: "RTP jitter is {{ $value }}ms"
+
+      # High latency
+      - alert: HighLatency
+        expr: roip_rtp_latency_ms > 200
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High RTP latency"
+          description: "RTP latency is {{ $value }}ms"

@@ -1,0 +1,103 @@
+╔═══════════════════════════════════════════════════════════════╗
+║        ESP32 RoIP Security Audit Report                      ║
+║        Sat Nov 22 01:08:04 UTC 2025                           ║
+╚═══════════════════════════════════════════════════════════════╝
+
+
+=== 1. File System Security ===
+
+[0;34m[i][0m Checking for world-writable files...
+[0;32m[✓][0m No world-writable files found
+[0;34m[i][0m Checking for SUID/SGID files...
+[0;32m[✓][0m No SUID/SGID files found
+[0;32m[✓][0m .git directory permissions OK
+
+=== 2. Secret Scanning ===
+
+[0;34m[i][0m Scanning for hardcoded secrets...
+[0;34m[i][0m Checking for default credentials...
+[0;31m[✗][0m CRITICAL: Default 'change-me-in-production' secret found
+[0;31m[✗][0m HIGH: Default database password 'roip_password' found
+[0;32m[✓][0m No .env files tracked in git
+[0;32m[✓][0m Secret scanning complete
+
+=== 3. Dependency Vulnerability Scanning ===
+
+[0;34m[i][0m Skipping dependency scan in quick mode
+
+=== 4. Code Security Analysis ===
+
+[0;34m[i][0m Analyzing JavaScript code...
+[0;32m[✓][0m No eval() usage found
+[1;33m[!][0m MEDIUM: Command execution functions found - ensure input sanitization
+[0;34m[i][0m Checking for potential SQL injection...
+[0;31m[✗][0m HIGH: Potential SQL injection - string concatenation in queries
+[0;34m[i][0m Checking for input validation...
+[0;32m[✓][0m Input validation library present (joi)
+[0;34m[i][0m Checking for HTTPS/TLS configuration...
+[0;31m[✗][0m HIGH: No HTTPS/TLS configuration found - communications may be unencrypted
+[0;34m[i][0m Checking for rate limiting...
+[0;34m[i][0m Checking CORS configuration...
+[0;34m[i][0m Checking for security headers...
+[0;32m[✓][0m Helmet security headers middleware found
+[0;34m[i][0m Checking password hashing...
+[0;32m[✓][0m Proper password hashing library in use
+[0;34m[i][0m Checking JWT configuration...
+[0;32m[✓][0m JWT secret uses environment variable
+
+=== 5. Configuration Security ===
+
+[0;34m[i][0m Checking YAML configuration files...
+[0;34m[i][0m Analyzing /home/user/MMDVM/roip-server/config/default.yaml...
+[0;31m[✗][0m CRITICAL: Default/weak password in config: /home/user/MMDVM/roip-server/config/default.yaml
+[1;33m[!][0m MEDIUM: Service binding to 0.0.0.0 in: /home/user/MMDVM/roip-server/config/default.yaml
+[0;34m[i][0m Checking for secure defaults...
+[0;32m[✓][0m Security configuration file exists
+[0;34m[i][0m Checking database encryption...
+[0;32m[✓][0m Database encryption field present
+
+=== 6. SSL/TLS Certificate Validation ===
+
+[0;34m[i][0m Checking for SSL/TLS certificates...
+[0;34m[i][0m INFO: No SSL/TLS certificates found
+
+=== 7. Network Security ===
+
+[0;34m[i][0m Checking network security configuration...
+[0;34m[i][0m Service ports configured
+[0;34m[i][0m INFO: Ensure firewall rules restrict access to necessary ports only
+[0;34m[i][0m Checking session security...
+[0;32m[✓][0m Secure session flags found
+
+=== 8. Docker Security ===
+
+[0;34m[i][0m Checking Docker configuration...
+[0;32m[✓][0m Dockerfile specifies user
+[1;33m[!][0m LOW: .dockerignore file missing
+
+=== 9. Logging and Monitoring ===
+
+[0;34m[i][0m Checking logging configuration...
+[0;32m[✓][0m Logging library found
+[0;31m[✗][0m HIGH: Potential password logging detected
+[1;33m[!][0m MEDIUM: No audit logging implementation found
+[0;34m[i][0m Checking error handling...
+[1;33m[!][0m LOW: Stack traces may be exposed - review error handling
+
+=== Audit Summary ===
+
+
+╔═══════════════════════════════════════════════════════════════╗
+║                      AUDIT SUMMARY                            ║
+╠═══════════════════════════════════════════════════════════════╣
+║  [0;31mCritical Issues:     2[0m                                   ║
+║  [0;31mHigh Issues:         4[0m                                   ║
+║  [1;33mMedium Issues:       3[0m                                   ║
+║  [1;33mLow Issues:          2[0m                                   ║
+║  [0;34mInfo Items:          2[0m                                   ║
+╚═══════════════════════════════════════════════════════════════╝
+
+Risk Score: 48
+[1;33mRisk Level: HIGH - Review and fix issues[0m
+
+Report saved to: /home/user/MMDVM/security/reports/security_audit_20251122_010804.txt

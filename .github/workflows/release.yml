@@ -1,0 +1,437 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  PLATFORMIO_CORE_DIR: .platformio
+
+jobs:
+  # ============================================================
+  # Build all firmware variants for release
+  # ============================================================
+  build-firmware:
+    name: Build Firmware - ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        environment:
+          - esp32-roip
+          - esp32s2-roip
+          - esp32s3-roip
+          - esp32c3-roip
+          - esp32c5-roip
+          - esp32c6-roip
+          - esp32h2-roip
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_num=${VERSION#v}" >> $GITHUB_OUTPUT
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            .platformio
+            roip-firmware/.pio
+          key: ${{ runner.os }}-platformio-release-${{ hashFiles('**/platformio.ini') }}-${{ matrix.environment }}
+          restore-keys: |
+            ${{ runner.os }}-platformio-release-
+            ${{ runner.os }}-platformio-
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade platformio
+
+      - name: Update version in firmware
+        working-directory: roip-firmware
+        run: |
+          # Update version in platformio.ini
+          sed -i "s/ROIP_VERSION=.*/ROIP_VERSION=\\\"${{ steps.version.outputs.version_num }}\\\"/" platformio.ini
+
+      - name: Build release firmware
+        working-directory: roip-firmware
+        run: |
+          echo "Building release firmware for ${{ matrix.environment }}..."
+          pio run -e ${{ matrix.environment }}
+
+      - name: Rename firmware with version
+        working-directory: roip-firmware
+        run: |
+          mkdir -p release
+          cp .pio/build/${{ matrix.environment }}/firmware.bin \
+             release/esp32-roip-${{ matrix.environment }}-${{ steps.version.outputs.version }}.bin
+          cp .pio/build/${{ matrix.environment }}/firmware.elf \
+             release/esp32-roip-${{ matrix.environment }}-${{ steps.version.outputs.version }}.elf
+
+      - name: Generate firmware info
+        working-directory: roip-firmware
+        run: |
+          cat > release/${{ matrix.environment }}-info.txt << EOF
+          Firmware: ESP32 RoIP - ${{ matrix.environment }}
+          Version: ${{ steps.version.outputs.version }}
+          Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          Commit: ${{ github.sha }}
+
+          File Information:
+          $(ls -lh release/*.bin)
+
+          Memory Usage:
+          $(pio run -e ${{ matrix.environment }} --target size 2>&1 | grep -A 10 "Memory Usage" || echo "Size info not available")
+          EOF
+
+      - name: Upload firmware artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ matrix.environment }}
+          path: roip-firmware/release/
+          retention-days: 90
+
+  # ============================================================
+  # Build Docker image for release
+  # ============================================================
+  build-docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_num=${VERSION#v}" >> $GITHUB_OUTPUT
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/esp-roip-server:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/esp-roip-server:${{ steps.version.outputs.version }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/esp-roip-server:${{ steps.version.outputs.version_num }}
+          build-args: |
+            BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ steps.version.outputs.version_num }}
+
+  # ============================================================
+  # Generate changelog
+  # ============================================================
+  generate-changelog:
+    name: Generate Changelog
+    runs-on: ubuntu-latest
+
+    outputs:
+      changelog: ${{ steps.changelog.outputs.changelog }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the previous tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [ -z "$PREVIOUS_TAG" ]; then
+            # First release
+            CHANGELOG="# First Release\n\nInitial release of ESP32 RoIP system."
+          else
+            # Generate changelog from commits
+            CHANGELOG="# Changes since $PREVIOUS_TAG\n\n"
+
+            # Group commits by type
+            CHANGELOG="${CHANGELOG}## Features\n"
+            git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s (%h)" --grep="^feat" >> features.tmp || true
+            if [ -s features.tmp ]; then
+              cat features.tmp >> changelog.tmp
+              echo "" >> changelog.tmp
+            fi
+
+            CHANGELOG="${CHANGELOG}\n## Bug Fixes\n"
+            git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s (%h)" --grep="^fix" >> fixes.tmp || true
+            if [ -s fixes.tmp ]; then
+              cat fixes.tmp >> changelog.tmp
+              echo "" >> changelog.tmp
+            fi
+
+            CHANGELOG="${CHANGELOG}\n## Other Changes\n"
+            git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s (%h)" --invert-grep --grep="^feat" --grep="^fix" >> other.tmp || true
+            if [ -s other.tmp ]; then
+              cat other.tmp >> changelog.tmp
+              echo "" >> changelog.tmp
+            fi
+          fi
+
+          # Save changelog
+          echo "$CHANGELOG" > CHANGELOG.md
+          cat CHANGELOG.md
+
+          # Output for GitHub
+          {
+            echo 'changelog<<EOF'
+            cat CHANGELOG.md
+            echo EOF
+          } >> $GITHUB_OUTPUT
+
+      - name: Upload changelog
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: CHANGELOG.md
+          retention-days: 90
+
+  # ============================================================
+  # Create GitHub Release
+  # ============================================================
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-firmware, build-docker, generate-changelog]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download all firmware artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Download changelog
+        uses: actions/download-artifact@v4
+        with:
+          name: changelog
+          path: .
+
+      - name: Create release package
+        run: |
+          mkdir -p release-package
+
+          # Copy all firmware binaries
+          find release-artifacts -name "*.bin" -exec cp {} release-package/ \;
+
+          # Copy firmware info files
+          find release-artifacts -name "*-info.txt" -exec cp {} release-package/ \;
+
+          # Create installation guide
+          cat > release-package/INSTALLATION.md << 'EOF'
+          # ESP32 RoIP Installation Guide
+
+          ## Firmware Installation
+
+          1. Choose the appropriate firmware for your ESP32 variant
+          2. Use esptool.py or PlatformIO to flash the firmware
+          3. Configure WiFi and server settings
+
+          ### Using esptool.py
+          ```bash
+          esptool.py --chip esp32 --port /dev/ttyUSB0 write_flash 0x10000 firmware.bin
+          ```
+
+          ### Using PlatformIO
+          ```bash
+          pio run -e <environment> --target upload
+          ```
+
+          ## Server Installation
+
+          ### Using Docker
+          ```bash
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/esp-roip-server:${{ steps.version.outputs.version }}
+          docker-compose up -d
+          ```
+
+          ### Manual Installation
+          See ROIP_SERVER_GUIDE.md for detailed instructions.
+
+          ## Documentation
+
+          - ROIP_QUICKSTART.md - Quick start guide
+          - ROIP_SERVER_GUIDE.md - Server setup and configuration
+          - ROIP_CLIENT_GUIDE.md - ESP32 client setup
+          - ROIP_API_REFERENCE.md - API documentation
+          - ROIP_TROUBLESHOOTING.md - Troubleshooting guide
+          EOF
+
+          # Copy documentation
+          cp ROIP_*.md release-package/ 2>/dev/null || true
+          cp CHANGELOG.md release-package/
+
+          # Create checksums
+          cd release-package
+          sha256sum *.bin > checksums-sha256.txt
+          md5sum *.bin > checksums-md5.txt
+          cd ..
+
+      - name: Create release archive
+        run: |
+          tar -czf esp32-roip-${{ steps.version.outputs.version }}.tar.gz release-package/
+          zip -r esp32-roip-${{ steps.version.outputs.version }}.zip release-package/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: ESP32 RoIP ${{ steps.version.outputs.version }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.version, 'beta') || contains(steps.version.outputs.version, 'alpha') || contains(steps.version.outputs.version, 'rc') }}
+          files: |
+            esp32-roip-${{ steps.version.outputs.version }}.tar.gz
+            esp32-roip-${{ steps.version.outputs.version }}.zip
+            release-package/*.bin
+            release-package/checksums-*.txt
+            release-package/INSTALLATION.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================
+  # Release summary
+  # ============================================================
+  release-summary:
+    name: Release Summary
+    runs-on: ubuntu-latest
+    needs: [build-firmware, build-docker, create-release]
+    if: always()
+
+    steps:
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Generate release summary
+        run: |
+          echo "# Release Summary: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|--------|" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.build-firmware.result }}" == "success" ]; then
+            echo "| Firmware Build | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Firmware Build | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.build-docker.result }}" == "success" ]; then
+            echo "| Docker Build | ✅ Success |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| Docker Build | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          if [ "${{ needs.create-release.result }}" == "success" ]; then
+            echo "| GitHub Release | ✅ Created |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| GitHub Release | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Firmware Variants Built" >> $GITHUB_STEP_SUMMARY
+          echo "- ESP32 (Original)" >> $GITHUB_STEP_SUMMARY
+          echo "- ESP32-S2" >> $GITHUB_STEP_SUMMARY
+          echo "- ESP32-S3 (Recommended)" >> $GITHUB_STEP_SUMMARY
+          echo "- ESP32-C3" >> $GITHUB_STEP_SUMMARY
+          echo "- ESP32-C5" >> $GITHUB_STEP_SUMMARY
+          echo "- ESP32-C6" >> $GITHUB_STEP_SUMMARY
+          echo "- ESP32-H2" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Docker Images" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKERHUB_USERNAME }}/esp-roip-server:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`${{ secrets.DOCKERHUB_USERNAME }}/esp-roip-server:${{ steps.version.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Release Assets" >> $GITHUB_STEP_SUMMARY
+          echo "- Firmware binaries for all ESP32 variants" >> $GITHUB_STEP_SUMMARY
+          echo "- Installation guide" >> $GITHUB_STEP_SUMMARY
+          echo "- Checksums (SHA256 and MD5)" >> $GITHUB_STEP_SUMMARY
+          echo "- Complete documentation package" >> $GITHUB_STEP_SUMMARY
+
+      - name: Check release status
+        run: |
+          if [ "${{ needs.build-firmware.result }}" != "success" ] || \
+             [ "${{ needs.build-docker.result }}" != "success" ] || \
+             [ "${{ needs.create-release.result }}" != "success" ]; then
+            echo "❌ Release build failed"
+            exit 1
+          fi
+          echo "✅ Release ${{ steps.version.outputs.version }} completed successfully"

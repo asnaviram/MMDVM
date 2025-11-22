@@ -1,0 +1,102 @@
+codecov:
+  require_ci_to_pass: yes
+  notify:
+    wait_for_ci: yes
+
+coverage:
+  precision: 2
+  round: down
+  range: "60...100"
+
+  status:
+    project:
+      default:
+        target: 70%
+        threshold: 2%
+        base: auto
+        flags:
+          - server-unit
+          - server-integration
+        if_ci_failed: error
+
+    patch:
+      default:
+        target: 80%
+        threshold: 5%
+        base: auto
+        if_ci_failed: error
+
+comment:
+  layout: "header, diff, flags, components, footer"
+  behavior: default
+  require_changes: false
+  require_base: no
+  require_head: yes
+
+flags:
+  server-unit:
+    paths:
+      - roip-server/src/
+    carryforward: false
+
+  server-integration:
+    paths:
+      - roip-server/src/
+    carryforward: false
+
+component_management:
+  individual_components:
+    - component_id: server-core
+      name: "Server Core"
+      paths:
+        - roip-server/src/core/
+        - roip-server/src/server.js
+
+    - component_id: sip-module
+      name: "SIP Module"
+      paths:
+        - roip-server/src/sip/
+
+    - component_id: rtp-module
+      name: "RTP Module"
+      paths:
+        - roip-server/src/rtp/
+
+    - component_id: api-module
+      name: "API Module"
+      paths:
+        - roip-server/src/api/
+
+    - component_id: database
+      name: "Database Layer"
+      paths:
+        - roip-server/src/database/
+
+    - component_id: utils
+      name: "Utilities"
+      paths:
+        - roip-server/src/utils/
+
+ignore:
+  - "roip-server/test/"
+  - "roip-server/coverage/"
+  - "roip-server/node_modules/"
+  - "test/"
+  - "docker/"
+  - "**/*.test.js"
+  - "**/*.spec.js"
+  - "**/mocks/"
+  - "roip-dashboard/"
+
+github_checks:
+  annotations: true
+
+parsers:
+  gcov:
+    branch_detection:
+      conditional: yes
+      loop: yes
+      method: no
+      macro: no
+
+slack_app: false

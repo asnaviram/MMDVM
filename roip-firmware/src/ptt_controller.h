@@ -35,7 +35,7 @@ enum class PTT_STATE {
 
 // PTT Input Mode
 enum class PTT_MODE {
-  DISABLED,       // PTT controller disabled
+  PTT_DISABLED,   // PTT controller disabled
   COS_MODE,       // Carrier Operated Squelch mode
   VOX_MODE,       // Voice Operated Switch mode
   HYBRID_MODE     // COS + VOX with priority handling

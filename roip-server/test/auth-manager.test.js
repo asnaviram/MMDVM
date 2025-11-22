@@ -4,6 +4,7 @@
  * session management, and SIP digest auth
  */
 
+import { describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import AuthManager from '../src/auth/auth-manager.js';
 import jwt from 'jsonwebtoken';
 

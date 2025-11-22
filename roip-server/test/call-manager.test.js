@@ -4,6 +4,7 @@
  * call routing, and recording
  */
 
+import { jest, describe, test, expect, beforeEach, afterEach } from '@jest/globals';
 import { CallManager, CallState, CallDirection } from '../src/call/call-manager.js';
 import fs from 'fs';
 
