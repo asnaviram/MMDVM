@@ -1,0 +1,152 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: roip-postgres
+    hostname: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-roip}
+      POSTGRES_USER: ${DB_USER:-roip}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-roip_secure_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - roip-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-roip} -d ${DB_NAME:-roip}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+  # RoIP Server
+  roip-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: roip-server
+    hostname: roip-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      coturn:
+        condition: service_started
+    environment:
+      # Server configuration
+      NODE_ENV: ${NODE_ENV:-production}
+      SERVER_HOST: 0.0.0.0
+      SIP_PORT: 5060
+      SIP_TRANSPORT: ${SIP_TRANSPORT:-udp}
+      SIP_REALM: ${SIP_REALM:-roip.local}
+      RTP_PORT_MIN: 10000
+      RTP_PORT_MAX: 10100
+
+      # API configuration
+      API_PORT: 8080
+      WEBSOCKET_PORT: 8081
+      API_CORS_ORIGINS: ${API_CORS_ORIGINS:-*}
+
+      # Database configuration
+      DB_TYPE: postgresql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-roip}
+      DB_USER: ${DB_USER:-roip}
+      DB_PASSWORD: ${DB_PASSWORD:-roip_secure_password}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-20}
+
+      # Authentication
+      JWT_SECRET: ${JWT_SECRET:-change-this-secret-in-production}
+      JWT_EXPIRY: ${JWT_EXPIRY:-1h}
+
+      # Logging
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+
+      # TURN/STUN server
+      TURN_SERVER: ${TURN_SERVER:-coturn}
+      TURN_PORT: 3478
+      TURN_USERNAME: ${TURN_USERNAME:-roip}
+      TURN_PASSWORD: ${TURN_PASSWORD:-roip_turn_password}
+
+      # Network configuration
+      ENABLE_STUN: ${ENABLE_STUN:-true}
+      ENABLE_TURN: ${ENABLE_TURN:-true}
+      NAT_DETECTION: ${NAT_DETECTION:-true}
+    ports:
+      - "5060:5060/udp"
+      - "10000-10100:10000-10100/udp"
+      - "8080:8080"
+      - "8081:8081"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config:ro
+      - ../roip-server/src:/app/src:ro
+    networks:
+      - roip-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+  # Coturn TURN/STUN Server
+  coturn:
+    image: coturn/coturn:4.6-alpine
+    container_name: roip-coturn
+    hostname: coturn
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "3479:3479/tcp"
+      - "3479:3479/udp"
+      - "5349:5349/tcp"
+      - "5349:5349/udp"
+      - "5350:5350/tcp"
+      - "5350:5350/udp"
+      - "49152-49200:49152-49200/udp"
+    volumes:
+      - ./coturn.conf:/etc/coturn/turnserver.conf:ro
+      - ./turnusers.txt:/etc/coturn/turnusers.txt:ro
+      - coturn_data:/var/lib/coturn
+    networks:
+      - roip-network
+    environment:
+      DETECT_EXTERNAL_IP: "yes"
+      DETECT_RELAY_IP: "yes"
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  postgres_data:
+    driver: local
+  coturn_data:
+    driver: local
+
+networks:
+  roip-network:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: 1500

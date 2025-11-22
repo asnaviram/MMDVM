@@ -1,0 +1,73 @@
+# Environment Configuration
+.env
+.env.local
+.env.*.local
+
+# Data Directories
+data/
+postgres_data/
+coturn_data/
+
+# Logs
+*.log
+logs/
+coturn_logs/
+
+# Backup and temporary files
+*.sql.bak
+*.sql.gz
+backup/
+backups/
+*.tar.gz
+*.zip
+
+# Docker volumes (when not using named volumes)
+.volumes/
+volumes/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Certificate and key files
+*.pem
+*.crt
+*.key
+*.csr
+certs/
+certificates/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Node modules (if building locally)
+node_modules/
+
+# TURN users file (contains passwords)
+turnusers.txt
+
+# SSL/TLS certificates
+ssl/
+tls/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Docker build cache
+.docker/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS files
+Thumbs.db
+.vagrant/
