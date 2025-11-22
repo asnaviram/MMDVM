@@ -1,0 +1,31 @@
+{
+  "name": "roip-e2e-tests",
+  "version": "1.0.0",
+  "description": "End-to-end integration tests for RoIP system",
+  "type": "module",
+  "main": "runner.js",
+  "scripts": {
+    "test": "node runner.js",
+    "test:docker": "bash test_e2e.sh",
+    "test:skip-docker": "SKIP_DOCKER=true node runner.js",
+    "test:verbose": "VERBOSE=true node runner.js"
+  },
+  "keywords": [
+    "roip",
+    "e2e",
+    "integration",
+    "test",
+    "esp32"
+  ],
+  "author": "ESP32 RoIP Team",
+  "license": "GPL-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "node-fetch": "^2.7.0"
+  },
+  "optionalDependencies": {
+    "node-fetch": "^2.7.0"
+  }
+}

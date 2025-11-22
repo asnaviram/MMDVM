@@ -1,0 +1,764 @@
+
+> esp-roip-server@1.0.0 test
+> node --experimental-vm-modules node_modules/jest/bin/jest.js
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+
+  console.log
+    SQLite database initialized: ./test-roip.db
+
+      at DatabaseModule.initializeSQLite (src/database/database.js:88:13)
+
+  console.log
+    Initial schema already created by DatabaseModule.createSchema()
+
+      at migration (src/database/migrations/001_init_schema.js:9:11)
+
+  console.log
+    Migration completed: 001_init_schema.js
+
+      at DatabaseModule.runMigrations (src/database/database.js:377:17)
+
+  console.log
+    SQLite connection closed
+
+      at DatabaseModule.closeConnection (src/database/database.js:1331:17)
+

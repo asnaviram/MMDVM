@@ -1,0 +1,511 @@
+
+> esp-roip-server@1.0.0 test
+> node --experimental-vm-modules node_modules/jest/bin/jest.js
+
+(node:11838) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+FAIL test/sip-server.test.js
+  SIP Server Tests
+    SIP Message Parsing
+      ✕ should parse valid SIP request message (17 ms)
+      ✕ should parse SIP response message
+      ✕ should extract From header (1 ms)
+      ✕ should extract To header
+      ✕ should handle header folding (1 ms)
+      ✕ should parse Contact header
+      ✕ should parse Authorization header (1 ms)
+      ✕ should handle invalid message gracefully
+    REGISTER Message Handling
+      ✕ should send 401 challenge on initial REGISTER without auth (1 ms)
+      ✕ should register device with valid digest auth
+      ✕ should unregister device when expires=0
+      ✕ should track registration metrics
+    INVITE/ACK/BYE Call Flow
+      ✕ should handle INVITE request (1 ms)
+      ✕ should handle ACK to establish call
+      ✕ should handle BYE to terminate call
+      ✕ should track active dialogs
+    Digest Authentication
+      ✕ should compute digest response correctly
+      ✕ should verify valid digest auth
+      ✕ should reject invalid digest response
+      ✕ should validate nonce format
+      ✕ should generate unique nonces
+    Dialog Management
+      ✕ should create dialog with unique ID
+      ✕ should transition dialog states correctly
+      ✕ should find registration by URI
+      ✕ should return null for non-existent registration
+      ✕ should retrieve all registrations
+      ✕ should retrieve all dialogs (1 ms)
+    Server Metrics and Statistics
+      ✕ should initialize metrics
+      ✕ should track message counts
+      ✕ should get server metrics
+    Tag and Nonce Generation
+      ✕ should generate unique tags
+      ✕ should generate valid branch IDs
+      ✕ should generate valid call IDs
+
+  ● SIP Server Tests › SIP Message Parsing › should parse valid SIP request message
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › SIP Message Parsing › should parse SIP response message
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › SIP Message Parsing › should extract From header
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › SIP Message Parsing › should extract To header
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › SIP Message Parsing › should handle header folding
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › SIP Message Parsing › should parse Contact header
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › SIP Message Parsing › should parse Authorization header
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › SIP Message Parsing › should handle invalid message gracefully
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › REGISTER Message Handling › should send 401 challenge on initial REGISTER without auth
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › REGISTER Message Handling › should register device with valid digest auth
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › REGISTER Message Handling › should unregister device when expires=0
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › REGISTER Message Handling › should track registration metrics
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › INVITE/ACK/BYE Call Flow › should handle INVITE request
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › INVITE/ACK/BYE Call Flow › should handle ACK to establish call
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › INVITE/ACK/BYE Call Flow › should handle BYE to terminate call
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › INVITE/ACK/BYE Call Flow › should track active dialogs
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Digest Authentication › should compute digest response correctly
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Digest Authentication › should verify valid digest auth
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Digest Authentication › should reject invalid digest response
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Digest Authentication › should validate nonce format
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Digest Authentication › should generate unique nonces
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Dialog Management › should create dialog with unique ID
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Dialog Management › should transition dialog states correctly
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Dialog Management › should find registration by URI
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Dialog Management › should return null for non-existent registration
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Dialog Management › should retrieve all registrations
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Dialog Management › should retrieve all dialogs
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Server Metrics and Statistics › should initialize metrics
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Server Metrics and Statistics › should track message counts
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Server Metrics and Statistics › should get server metrics
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Tag and Nonce Generation › should generate unique tags
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Tag and Nonce Generation › should generate valid branch IDs
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+
+  ● SIP Server Tests › Tag and Nonce Generation › should generate valid call IDs
+
+    ReferenceError: jest is not defined
+
+      22 |   beforeEach(() => {
+      23 |     mockAuthManager = {
+    > 24 |       getPassword: jest.fn().mockResolvedValue('testpass123')
+         |                    ^
+      25 |     };
+      26 |
+      27 |     mockDatabase = {
+
+      at Object.<anonymous> (test/sip-server.test.js:24:20)
+

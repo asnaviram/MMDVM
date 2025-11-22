@@ -1,0 +1,282 @@
+
+========================================
+Opus Codec Module - Unit Tests
+========================================
+
+
+--- GROUP 1: Encoder Initialization ---
+Running: test_encoder_init_default_parameters
+PASS
+PASS
+FAIL
+  at /home/user/MMDVM/test/test_codec_opus.cpp:109
+  condition: codec->isInitialized()
+PASS
+PASS
+PASS
+PASS
+Running: test_encoder_init_8khz_sample_rate
+PASS
+PASS
+PASS
+Running: test_encoder_init_16khz_sample_rate
+PASS
+PASS
+PASS
+Running: test_encoder_init_24khz_sample_rate
+PASS
+PASS
+PASS
+Running: test_encoder_init_48khz_sample_rate
+PASS
+PASS
+PASS
+Running: test_encoder_init_mono_channel
+PASS
+PASS
+PASS
+Running: test_encoder_init_stereo_channel
+PASS
+PASS
+PASS
+Running: test_encoder_init_bitrate_8kbps
+PASS
+PASS
+FAIL
+  at /home/user/MMDVM/test/test_codec_opus.cpp:162
+  expected: 8000, actual: 32000
+Running: test_encoder_init_bitrate_32kbps
+PASS
+PASS
+PASS
+Running: test_encoder_init_bitrate_64kbps
+PASS
+PASS
+FAIL
+  at /home/user/MMDVM/test/test_codec_opus.cpp:176
+  expected: 64000, actual: 32000
+Running: test_encoder_init_invalid_sample_rate
+PASS
+PASS
+Running: test_encoder_init_invalid_channels
+PASS
+PASS
+Running: test_encoder_init_invalid_bitrate
+PASS
+PASS
+Running: test_encoder_init_voip_mode
+PASS
+PASS
+Running: test_encoder_init_audio_mode
+PASS
+PASS
+
+--- GROUP 2: Decoder Initialization ---
+Running: test_decoder_init_default_parameters
+PASS
+PASS
+PASS
+PASS
+Running: test_decoder_init_8khz_sample_rate
+PASS
+PASS
+PASS
+Running: test_decoder_init_48khz_sample_rate
+PASS
+PASS
+PASS
+Running: test_decoder_init_stereo
+PASS
+PASS
+PASS
+Running: test_decoder_init_invalid_sample_rate
+PASS
+Running: test_decoder_init_invalid_channels
+PASS
+
+--- GROUP 3: Encode PCM Frame ---
+Running: test_encode_pcm_frame_success
+PASS
+PASS
+PASS
+PASS
+Running: test_encode_pcm_null_input
+PASS
+PASS
+PASS
+Running: test_encode_pcm_null_output
+PASS
+PASS
+PASS
+Running: test_encode_without_init
+PASS
+PASS
+Running: test_encode_undersized_buffer
+PASS
+PASS
+PASS
+Running: test_encode_multiple_frames
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+Running: test_encode_different_sample_rates
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+
+--- GROUP 4: Decode Opus Frame ---
+Running: test_decode_opus_frame_success
+PASS
+PASS
+PASS
+Running: test_decode_null_output
+PASS
+PASS
+Running: test_decode_without_init
+PASS
+PASS
+Running: test_decode_undersized_output
+PASS
+Running: test_decode_invalid_payload
+PASS
+
+--- GROUP 5: Round-trip Encoding/Decoding ---
+Running: test_roundtrip_encode_decode_quality
+PASS
+PASS
+PASS
+FAIL
+  at /home/user/MMDVM/test/test_codec_opus.cpp:411
+  expected > 15, actual: 0
+Running: test_roundtrip_high_bitrate_quality
+PASS
+FAIL
+  at /home/user/MMDVM/test/test_codec_opus.cpp:435
+  expected > 0, actual: 0
+Running: test_roundtrip_multiple_cycles
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+
+--- GROUP 6: Bitrate Control ---
+Running: test_bitrate_8kbps
+PASS
+PASS
+PASS
+Running: test_bitrate_16kbps
+PASS
+PASS
+PASS
+Running: test_bitrate_32kbps
+PASS
+PASS
+PASS
+Running: test_bitrate_64kbps
+PASS
+PASS
+PASS
+Running: test_bitrate_invalid_too_low
+PASS
+PASS
+Running: test_bitrate_invalid_too_high
+PASS
+PASS
+Running: test_bitrate_not_initialized
+PASS
+PASS
+Running: test_bitrate_dynamic_change
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+
+--- GROUP 7: Complexity Settings ---
+Running: test_complexity_0_fastest
+PASS
+PASS
+PASS
+Running: test_complexity_5_medium
+PASS
+PASS
+PASS
+Running: test_complexity_10_highest
+PASS
+PASS
+PASS
+Running: test_complexity_all_levels
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+PASS
+Running: test_complexity_invalid_too_high
+PASS
+PASS
+Running: test_complexity_not_initialized
+PASS
+PASS
+Running: test_complexity_affects_encoding
+PASS
+PASS
+PASS
+
+--- GROUP 8: FEC (Forward Error Correction) ---
+Running: test_fec_enable
+PASS
+PASS
+PASS
+Running: test_fec_disable
+PASS
+PASS
+PASS
+Running: test_fec_0_percent_redundancy
+PASS
+PASS
+Running: test_fec_50_percent_redundancy
+PASS
+PASS
+Running: test_fec_100_percent_redundancy
+PASS
+PASS
+Running: test_fec_invalid_redundancy
+PASS
+PASS
+Running: test_fec_before_init
+PASS
+PASS
+Running: test_fec_increases_packet_size

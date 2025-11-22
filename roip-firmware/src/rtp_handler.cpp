@@ -914,10 +914,10 @@ void RTPHandler::updateReceiverStatistics(const RTPPacket& packet) {
         packets_received_cum++;
     }
 
-    // Calculate packet loss
+    // Calculate packet loss (avoid division by zero)
     uint32_t packets_received_interval = packets_received_cum;
-    uint32_t lost_interval = packets_expected - packets_received_interval;
-    uint8_t fraction_lost = (lost_interval << 8) / packets_expected;
+    uint32_t lost_interval = (packets_expected > 0) ? (packets_expected - packets_received_interval) : 0;
+    uint8_t fraction_lost = (packets_expected > 0) ? ((lost_interval << 8) / packets_expected) : 0;
 
     // Update statistics
     stats.packets_received++;
@@ -944,7 +944,7 @@ void RTPHandler::calculateJitter(uint32_t rtp_timestamp, uint32_t arrival_time) 
         d = transit - d;
     }
 
-    inter_arrival_jitter += std::abs(d - inter_arrival_jitter) / 16;
+    inter_arrival_jitter += std::abs((int32_t)(d - inter_arrival_jitter)) / 16;
 
     jitter_history.push_back(inter_arrival_jitter);
     if (jitter_history.size() > STATS_WINDOW_SIZE) {
